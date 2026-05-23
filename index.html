@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Capstone Studio</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- LOGIN SCREEN -->
+<div id="login-screen" class="active">
+  <div style="text-align:center;">
+    <div class="login-logo">Capstone Requirement Generator </div>
+    <div class="login-title">🎓 Capstone Studio</div>
+   
+  </div>
+  <div class="login-card">
+    <div class="field-group">
+      <label class="field-label">Username</label>
+      <input type="text" class="field-input" id="login-user" placeholder="Enter username" autocomplete="username" />
+    </div>
+    <div class="field-group">
+      <label class="field-label">Password</label>
+      <input type="password" class="field-input" id="login-pass" placeholder="Enter password" autocomplete="current-password" />
+    </div>
+    <button class="btn-primary" id="login-btn" onclick="doLogin()">Sign In</button>
+    <div class="error-msg" id="login-error">Invalid credentials. Please try again.</div>
+    
+  </div>
+</div>
+
+<!-- APP SCREEN -->
+<div id="app-screen">
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div class="topbar-brand">
+      <div class="topbar-icon">🎓</div>
+      <span class="topbar-name">Capstone Studio</span>
+    </div>
+    <div class="topbar-right">
+      <div class="user-badge">
+        <div class="user-dot"></div>
+        <span id="user-label">admin</span>
+      </div>
+      <button class="btn-logout" onclick="doLogout()">Sign Out</button>
+    </div>
+  </div>
+
+  <!-- APP BODY -->
+  <div class="app-body">
+
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-title">Sectors (40)</div>
+        <input type="text" class="search-input" placeholder="Search sectors..." id="sector-search" oninput="filterSectors()" />
+      </div>
+      <div class="sector-list" id="sector-list"></div>
+    </div>
+
+    <!-- MAIN PANEL -->
+    <div class="main-panel">
+
+      <!-- Panel header -->
+      <div class="panel-header">
+        <div class="selected-sector-display" id="sector-display">
+          <span class="no-selection">← Select a sector to begin</span>
+        </div>
+        <div class="entity-row" id="entity-row" style="display:none;"></div>
+      </div>
+
+      <!-- WORKFLOW STEPS -->
+      <div class="workflow-area">
+
+        <!-- STEP 1: DATA SOURCE MODE -->
+        <div class="step-card" id="step0">
+          <div class="step-header">
+            <div class="step-num active" id="snum0">⊕</div>
+            <div class="step-title">Data Source Mode</div>
+            <div class="step-status" id="source-status">—</div>
+          </div>
+          <div class="step-body">
+            <div class="source-toggle-row">
+              <button class="source-tab selected" id="tab-demo" onclick="setSourceMode('demo')">
+                🎲 Demo (Random Data)
+              </button>
+              <button class="source-tab" id="tab-upload" onclick="setSourceMode('upload')">
+                📂 Upload My Files
+              </button>
+            </div>
+
+            <!-- DEMO MODE PANEL -->
+            <div id="demo-panel" class="source-panel">
+              <div class="hint-text" style="margin-top:10px;">
+                Demo mode generates realistic random datasets for all 4 entities. No files needed.
+              </div>
+              <div class="demo-files-grid" id="demo-files-grid" style="display:none;"></div>
+            </div>
+
+            <!-- UPLOAD MODE PANEL -->
+            <div id="upload-panel" class="source-panel" style="display:none;">
+              <div class="hint-text" style="margin-top:10px; margin-bottom:12px;">
+                Upload your own data files for each entity. Supported: CSV, JSON, XLSX, XML/Parquet.
+              </div>
+              <div class="upload-grid" id="upload-grid">
+                <div class="hint-text" style="font-style:italic;">Select a sector first to see entity upload slots.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- STEP 2: API KEY -->
+        <div class="step-card" id="step1">
+          <div class="step-header">
+            <div class="step-num active" id="snum1">1</div>
+            <div class="step-title">
+              API Key
+              <span class="step-opt">(optional — leave blank for demo output)</span>
+            </div>
+          </div>
+          <div class="step-body">
+            <div class="api-row">
+              <input type="password" class="api-key-input" id="api-key-input" placeholder="sk-ant-api03-… (your Anthropic API key)" />
+            </div>
+            <div class="hint-text">Key is never stored. Leave blank for rich demo output.</div>
+          </div>
+        </div>
+
+        <!-- STEP 3: PROMPT CONFIG -->
+        <div class="step-card" id="step2">
+          <div class="step-header">
+            <div class="step-num" id="snum2">2</div>
+            <div class="step-title">Configure &amp; Generate Prompt</div>
+            <div class="step-status" id="char-status">—</div>
+          </div>
+          <div class="step-body">
+            <div class="step-section-label">Select character limit:</div>
+            <div class="char-row">
+              <div class="char-btn selected" onclick="selectCharLimit(8000,this)">8,000 chars</div>
+              <div class="char-btn" onclick="selectCharLimit(12000,this)">12,000 chars</div>
+              <div class="char-btn" onclick="selectCharLimit(6000,this)">6,000 chars</div>
+            </div>
+
+            <!-- COMPLEXITY LEVEL -->
+            <div class="step-section-label" style="margin-top:16px;">Complexity level:</div>
+            <div class="complexity-row" id="complexity-row">
+              <button class="complexity-btn" data-level="easy" onclick="selectComplexity('easy',this)">
+                <span class="complexity-icon">🟢</span>
+                <span class="complexity-label">Easy</span>
+                <span class="complexity-desc">Basic CRUD, simple queries, intro-level stories</span>
+              </button>
+              <button class="complexity-btn selected" data-level="medium" onclick="selectComplexity('medium',this)">
+                <span class="complexity-icon">🟡</span>
+                <span class="complexity-label">Medium</span>
+                <span class="complexity-desc">Joins, window functions, PySpark cleaning, DAX</span>
+              </button>
+              <button class="complexity-btn" data-level="hard" onclick="selectComplexity('hard',this)">
+                <span class="complexity-icon">🔴</span>
+                <span class="complexity-label">Hard</span>
+                <span class="complexity-desc">Advanced CTEs, ML pipelines, complex aggregations</span>
+              </button>
+              <button class="complexity-btn" data-level="mixed" onclick="selectComplexity('mixed',this)">
+                <span class="complexity-icon">🔵</span>
+                <span class="complexity-label">Mixed</span>
+                <span class="complexity-desc">All levels — progressive difficulty curve</span>
+              </button>
+            </div>
+
+            <div style="margin-top:16px;">
+              <button class="btn-action btn-gen-prompt" id="gen-prompt-btn" onclick="generatePrompt()" disabled>
+                ✦ Generate Prompt
+              </button>
+            </div>
+
+            <!-- Prompt preview -->
+            <div id="prompt-preview-wrap" style="display:none;">
+              <div class="complexity-badge-display" id="complexity-badge-display"></div>
+              <div class="prompt-preview" id="prompt-preview"></div>
+              <div class="prompt-meta">
+                <span class="char-count" id="char-count-display"></span>
+                <button class="btn-action btn-sm" onclick="copyPrompt()">📋 Copy Prompt</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- STEP 4: GENERATE OUTPUT -->
+        <div class="step-card" id="step3">
+          <div class="step-header">
+            <div class="step-num" id="snum3">3</div>
+            <div class="step-title">Generate Requirements &amp; Solutions</div>
+            <div class="step-status" id="gen-status">—</div>
+          </div>
+          <div class="step-body">
+            <div style="padding-top:14px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+              <button class="btn-action btn-generate" id="gen-btn" onclick="generate()" disabled>
+                <span id="gen-btn-inner">⚡ Generate Output Files</span>
+              </button>
+              <span class="hint-text" style="margin-top:0;">Generates 2 downloadable .docx files</span>
+            </div>
+
+            <!-- Progress -->
+            <div id="gen-progress" style="display:none; margin-top:16px;">
+              <div class="progress-label" id="progress-label">Connecting to Claude…</div>
+              <div class="progress-bar-wrap">
+                <div class="progress-bar-fill" id="progress-fill"></div>
+              </div>
+              <div class="progress-steps" id="progress-steps"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- STEP 5: DOWNLOAD -->
+        <div class="step-card" id="step-download" style="display:none;">
+          <div class="step-header">
+            <div class="step-num done">✓</div>
+            <div class="step-title">Output Files Ready</div>
+            <div class="step-status success-text">Generated successfully</div>
+          </div>
+          <div class="step-body">
+            <div class="files-grid" id="files-grid"></div>
+            <div class="dl-btn-row">
+              <button class="btn-action btn-download" onclick="downloadFile('req')">⬇ Download Requirements.docx</button>
+              <button class="btn-action btn-download" onclick="downloadFile('sol')">⬇ Download Solutions.docx</button>
+              <button class="btn-action btn-download-both" onclick="downloadBoth()">⬇ Download Both</button>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /workflow-area -->
+    </div><!-- /main-panel -->
+  </div><!-- /app-body -->
+</div><!-- /app-screen -->
+
+<!-- Toast notification -->
+<div class="toast" id="toast"></div>
+
+<!-- docx.js CDN — enables real Word document generation -->
+<script src="https://cdn.jsdelivr.net/npm/docx@7.7.0/build/index.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

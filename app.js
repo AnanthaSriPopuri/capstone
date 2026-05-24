@@ -1392,108 +1392,577 @@ function buildSchemaText(sector, entities){
   return buildSchemaOoxml(sector, entities);
 }
 
-/* ── SHARED STYLES XML for makeRichDocx ─────────────────── */
+/* ══════════════════════════════════════════════════════════
+   PDF-STYLE DOCUMENT GENERATOR
+   Produces a professionally formatted .docx that mirrors
+   the reference PDF: bold labels, italic scenario text,
+   numbered tasks, coloured section dividers, schema tables.
+══════════════════════════════════════════════════════════ */
+
+/* ── SHARED STYLES XML ───────────────────────────────────── */
 const RICH_STYLES_XML =
 `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
   <w:docDefaults>
-    <w:rPrDefault>
-      <w:rPr>
-        <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/>
-        <w:sz w:val="20"/>
-        <w:color w:val="333333"/>
-      </w:rPr>
-    </w:rPrDefault>
+    <w:rPrDefault><w:rPr>
+      <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/>
+      <w:sz w:val="20"/><w:color w:val="333333"/>
+    </w:rPr></w:rPrDefault>
   </w:docDefaults>
-  <w:style w:type="paragraph" w:styleId="Normal">
-    <w:name w:val="Normal"/>
-  </w:style>
+  <w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/></w:style>
+  <w:style w:type="numbering" w:styleId="ListNumber"><w:name w:val="List Number"/></w:style>
+  <w:style w:type="numbering" w:styleId="ListBullet"><w:name w:val="List Bullet"/></w:style>
 </w:styles>`;
 
-/* ── DOWNLOAD COMBINED .docx ────────────────────────────── */
-/* Requirements + Solutions rendered as plain paragraphs;
-   Schema rendered as formatted OOXML tables.              */
+/* ── NUMBERING XML (bullets + decimal lists) ─────────────── */
+const NUMBERING_XML =
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:abstractNum w:abstractNumId="1">
+    <w:lvl w:ilvl="0">
+      <w:start w:val="1"/><w:numFmt w:val="decimal"/>
+      <w:lvlText w:val="%1."/>
+      <w:lvlJc w:val="left"/>
+      <w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr>
+      <w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="20"/></w:rPr>
+    </w:lvl>
+  </w:abstractNum>
+  <w:abstractNum w:abstractNumId="2">
+    <w:lvl w:ilvl="0">
+      <w:start w:val="1"/><w:numFmt w:val="bullet"/>
+      <w:lvlText w:val="&#x2022;"/>
+      <w:lvlJc w:val="left"/>
+      <w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr>
+      <w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="20"/></w:rPr>
+    </w:lvl>
+  </w:abstractNum>
+  <w:abstractNum w:abstractNumId="3">
+    <w:lvl w:ilvl="0">
+      <w:start w:val="1"/><w:numFmt w:val="bullet"/>
+      <w:lvlText w:val="&#x2013;"/>
+      <w:lvlJc w:val="left"/>
+      <w:pPr><w:ind w:left="1080" w:hanging="360"/></w:pPr>
+      <w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="20"/></w:rPr>
+    </w:lvl>
+  </w:abstractNum>
+  <w:num w:numId="1"><w:abstractNumId w:val="1"/></w:num>
+  <w:num w:numId="2"><w:abstractNumId w:val="2"/></w:num>
+  <w:num w:numId="3"><w:abstractNumId w:val="3"/></w:num>
+</w:numbering>`;
+
+/* ── makeRichDocx2: includes numbering.xml ───────────────── */
+function makeRichDocx2(bodyXml){
+  const enc = new TextEncoder();
+
+  const docXml =
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:body>${bodyXml}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr></w:body>
+</w:document>`;
+
+  const rootRels =
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`;
+
+  const wordRels =
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>
+</Relationships>`;
+
+  const typesXml =
+`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>
+</Types>`;
+
+  return makeZipBlob([
+    ['[Content_Types].xml',          enc.encode(typesXml)],
+    ['_rels/.rels',                  enc.encode(rootRels)],
+    ['word/document.xml',            enc.encode(docXml)],
+    ['word/styles.xml',              enc.encode(RICH_STYLES_XML)],
+    ['word/numbering.xml',           enc.encode(NUMBERING_XML)],
+    ['word/_rels/document.xml.rels', enc.encode(wordRels)],
+  ]);
+}
+
+/* ══════════════════════════════════════════════════════════
+   OOXML PRIMITIVE BUILDERS
+══════════════════════════════════════════════════════════ */
+
+/* bold label like "Project Title:" */
+function oxLabel(text){ return (
+  `<w:p><w:pPr><w:spacing w:before="200" w:after="60"/></w:pPr>
+   <w:r><w:rPr><w:b/><w:sz w:val="22"/><w:color w:val="1F3864"/>
+     <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
+   <w:t xml:space="preserve">${escXml(text)}</w:t></w:r></w:p>`);
+}
+
+/* bold+italic section sub-label e.g. "Data Source: patients2.txt" */
+function oxDataSource(label, value){ return (
+  `<w:p><w:pPr><w:spacing w:before="120" w:after="80"/></w:pPr>
+   <w:r><w:rPr><w:b/><w:sz w:val="21"/>
+     <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
+   <w:t xml:space="preserve">${escXml(label)}</w:t></w:r>
+   <w:r><w:rPr><w:sz w:val="21"/>
+     <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
+   <w:t xml:space="preserve">${escXml(value)}</w:t></w:r></w:p>`);
+}
+
+/* section heading with blue bottom border */
+function oxSectionHeading(text){ return (
+  `<w:p><w:pPr>
+     <w:spacing w:before="300" w:after="120"/>
+     <w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="2E74B5"/></w:pBdr>
+   </w:pPr>
+   <w:r><w:rPr><w:b/><w:sz w:val="26"/><w:color w:val="1F3864"/>
+     <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
+   <w:t xml:space="preserve">${escXml(text)}</w:t></w:r></w:p>`);
+}
+
+/* plain body paragraph */
+function oxBody(text){ return (
+  `<w:p><w:pPr><w:spacing w:before="60" w:after="60"/></w:pPr>
+   <w:r><w:rPr><w:sz w:val="20"/>
+     <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
+   <w:t xml:space="preserve">${escXml(text)}</w:t></w:r></w:p>`);
+}
+
+/* italic indented scenario description */
+function oxItalic(text){ return (
+  `<w:p><w:pPr><w:spacing w:before="40" w:after="120"/>
+     <w:ind w:left="720"/></w:pPr>
+   <w:r><w:rPr><w:i/><w:sz w:val="20"/>
+     <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
+   <w:t xml:space="preserve">${escXml(text)}</w:t></w:r></w:p>`);
+}
+
+/* bullet item (numId=2) */
+function oxBullet(runs){ return (
+  `<w:p><w:pPr>
+     <w:numPr><w:ilvl w:val="0"/><w:numId w:val="2"/></w:numPr>
+     <w:spacing w:before="60" w:after="60"/>
+   </w:pPr>${runs}</w:p>`);
+}
+
+/* sub-bullet (numId=3, dash) */
+function oxSubBullet(runs){ return (
+  `<w:p><w:pPr>
+     <w:numPr><w:ilvl w:val="0"/><w:numId w:val="3"/></w:numPr>
+     <w:spacing w:before="30" w:after="30"/>
+   </w:pPr>${runs}</w:p>`);
+}
+
+/* bold run */
+function oxB(text){ return (
+  `<w:r><w:rPr><w:b/><w:sz w:val="20"/>
+     <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
+   <w:t xml:space="preserve">${escXml(text)}</w:t></w:r>`);
+}
+
+/* italic run */
+function oxI(text){ return (
+  `<w:r><w:rPr><w:i/><w:sz w:val="20"/>
+     <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
+   <w:t xml:space="preserve">${escXml(text)}</w:t></w:r>`);
+}
+
+/* normal run */
+function oxT(text){ return (
+  `<w:r><w:rPr><w:sz w:val="20"/>
+     <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
+   <w:t xml:space="preserve">${escXml(text)}</w:t></w:r>`);
+}
+
+/* bold+italic run */
+function oxBI(text){ return (
+  `<w:r><w:rPr><w:b/><w:i/><w:sz w:val="20"/>
+     <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
+   <w:t xml:space="preserve">${escXml(text)}</w:t></w:r>`);
+}
+
+/* numbered item title (bold) — uses numId=1 */
+function oxNumTitle(text, numRef){ return (
+  `<w:p><w:pPr>
+     <w:numPr><w:ilvl w:val="0"/><w:numId w:val="${numRef||1}"/></w:numPr>
+     <w:spacing w:before="140" w:after="40"/>
+   </w:pPr>
+   <w:r><w:rPr><w:b/><w:sz w:val="21"/>
+     <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
+   <w:t xml:space="preserve">${escXml(text)}</w:t></w:r></w:p>`);
+}
+
+/* empty spacer */
+function oxSp(before,after){ return (
+  `<w:p><w:pPr><w:spacing w:before="${before||120}" w:after="${after||60}"/></w:pPr></w:p>`);
+}
+
+/* page break */
+function oxPageBreak(){ return (
+  `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`);
+}
+
+/* ── 2-col Dataset Source table ─────────────────────────── */
+function oxDatasetTable(rows){
+  const bdr = `<w:top w:val="single" w:sz="4" w:color="2E74B5"/>
+               <w:left w:val="single" w:sz="4" w:color="2E74B5"/>
+               <w:bottom w:val="single" w:sz="4" w:color="2E74B5"/>
+               <w:right w:val="single" w:sz="4" w:color="2E74B5"/>`;
+  function hdr(t,w){ return `<w:tc>
+    <w:tcPr><w:tcW w:w="${w}" w:type="dxa"/><w:tcBorders>${bdr}</w:tcBorders>
+      <w:shading w:val="clear" w:fill="2E74B5"/>
+      <w:tcMar><w:top w:w="80" w:type="dxa"/><w:left w:w="120" w:type="dxa"/>
+               <w:bottom w:w="80" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tcMar>
+    </w:tcPr>
+    <w:p><w:r><w:rPr><w:b/><w:color w:val="FFFFFF"/><w:sz w:val="20"/>
+      <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
+      <w:t>${escXml(t)}</w:t></w:r></w:p></w:tc>`; }
+  function cell(t,w,shade){ return `<w:tc>
+    <w:tcPr><w:tcW w:w="${w}" w:type="dxa"/><w:tcBorders>${bdr}</w:tcBorders>
+      <w:shading w:val="clear" w:fill="${shade?'D6E4F0':'FFFFFF'}"/>
+      <w:tcMar><w:top w:w="80" w:type="dxa"/><w:left w:w="120" w:type="dxa"/>
+               <w:bottom w:w="80" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tcMar>
+    </w:tcPr>
+    <w:p><w:r><w:rPr><w:sz w:val="20"/>
+      <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
+      <w:t>${escXml(t)}</w:t></w:r></w:p></w:tc>`; }
+  const headerRow = `<w:tr><w:trPr><w:trHeight w:val="380"/></w:trPr>
+    ${hdr('Source Type',2800)}${hdr('File Name',6560)}</w:tr>`;
+  const dataRows = rows.map((r,i)=>
+    `<w:tr><w:trPr><w:trHeight w:val="340"/></w:trPr>
+      ${cell(r[0],2800,i%2===0)}${cell(r[1],6560,i%2===0)}</w:tr>`
+  ).join('');
+  return `<w:tbl>
+    <w:tblPr>
+      <w:tblW w:w="9360" w:type="dxa"/>
+      <w:tblBorders>
+        <w:top w:val="single" w:sz="4" w:color="2E74B5"/>
+        <w:left w:val="single" w:sz="4" w:color="2E74B5"/>
+        <w:bottom w:val="single" w:sz="4" w:color="2E74B5"/>
+        <w:right w:val="single" w:sz="4" w:color="2E74B5"/>
+        <w:insideH w:val="single" w:sz="4" w:color="2E74B5"/>
+        <w:insideV w:val="single" w:sz="4" w:color="2E74B5"/>
+      </w:tblBorders>
+    </w:tblPr>
+    <w:tblGrid><w:gridCol w:w="2800"/><w:gridCol w:w="6560"/></w:tblGrid>
+    ${headerRow}${dataRows}
+  </w:tbl><w:p><w:pPr><w:spacing w:after="200"/></w:pPr></w:p>`;
+}
+
+/* ── 3-col Schema table (SL No / Column Name / Description) */
+function oxSchemaTable3(title, rows){
+  const bdr = `<w:top w:val="single" w:sz="4" w:color="2E74B5"/>
+               <w:left w:val="single" w:sz="4" w:color="2E74B5"/>
+               <w:bottom w:val="single" w:sz="4" w:color="2E74B5"/>
+               <w:right w:val="single" w:sz="4" w:color="2E74B5"/>`;
+  function hdr(t,w){ return `<w:tc>
+    <w:tcPr><w:tcW w:w="${w}" w:type="dxa"/><w:tcBorders>${bdr}</w:tcBorders>
+      <w:shading w:val="clear" w:fill="2E74B5"/>
+      <w:tcMar><w:top w:w="80" w:type="dxa"/><w:left w:w="120" w:type="dxa"/>
+               <w:bottom w:w="80" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tcMar>
+    </w:tcPr>
+    <w:p><w:r><w:rPr><w:b/><w:color w:val="FFFFFF"/><w:sz w:val="20"/>
+      <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
+      <w:t>${escXml(t)}</w:t></w:r></w:p></w:tc>`; }
+  function cell(t,w,shade,bold){ return `<w:tc>
+    <w:tcPr><w:tcW w:w="${w}" w:type="dxa"/><w:tcBorders>${bdr}</w:tcBorders>
+      <w:shading w:val="clear" w:fill="${shade?'D6E4F0':'FFFFFF'}"/>
+      <w:tcMar><w:top w:w="80" w:type="dxa"/><w:left w:w="120" w:type="dxa"/>
+               <w:bottom w:w="80" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tcMar>
+    </w:tcPr>
+    <w:p><w:r><w:rPr>${bold?'<w:b/>':''}<w:sz w:val="20"/>
+      <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
+      <w:t>${escXml(t)}</w:t></w:r></w:p></w:tc>`; }
+  const headerRow = `<w:tr><w:trPr><w:trHeight w:val="380"/></w:trPr>
+    ${hdr('SL No',800)}${hdr('Column Name',2600)}${hdr('Description',5960)}</w:tr>`;
+  const dataRows = rows.map((r,i)=>
+    `<w:tr><w:trPr><w:trHeight w:val="340"/></w:trPr>
+      ${cell(String(r[0]),800,i%2===0)}
+      ${cell(r[1],2600,i%2===0,true)}
+      ${cell(r[2],5960,i%2===0)}</w:tr>`
+  ).join('');
+  const labelXml = title
+    ? `<w:p><w:pPr><w:spacing w:before="200" w:after="60"/></w:pPr>
+       <w:r><w:rPr><w:b/><w:sz w:val="22"/><w:color w:val="1F3864"/>
+         <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
+       <w:t>${escXml(title)}</w:t></w:r></w:p>` : '';
+  return labelXml + `<w:tbl>
+    <w:tblPr>
+      <w:tblW w:w="9360" w:type="dxa"/>
+      <w:tblBorders>
+        <w:top w:val="single" w:sz="4" w:color="2E74B5"/>
+        <w:left w:val="single" w:sz="4" w:color="2E74B5"/>
+        <w:bottom w:val="single" w:sz="4" w:color="2E74B5"/>
+        <w:right w:val="single" w:sz="4" w:color="2E74B5"/>
+        <w:insideH w:val="single" w:sz="4" w:color="2E74B5"/>
+        <w:insideV w:val="single" w:sz="4" w:color="2E74B5"/>
+      </w:tblBorders>
+    </w:tblPr>
+    <w:tblGrid><w:gridCol w:w="800"/><w:gridCol w:w="2600"/><w:gridCol w:w="5960"/></w:tblGrid>
+    ${headerRow}${dataRows}
+  </w:tbl><w:p><w:pPr><w:spacing w:after="200"/></w:pPr></w:p>`;
+}
+
+/* ══════════════════════════════════════════════════════════
+   PARSE PLAIN TEXT → STRUCTURED OOXML
+   Converts the demo/AI text output into the PDF-style layout
+══════════════════════════════════════════════════════════ */
+function plainToStructuredOoxml(text, sector, entities){
+  let xml = '';
+  const lines = text.split('\n');
+  let i = 0;
+  let numRef = 1; // incremented per section to restart numbering
+
+  /* Helper: collect consecutive non-empty lines as a paragraph */
+  function peekBlock(){
+    const block = [];
+    let j = i;
+    while(j < lines.length && lines[j].trim()) { block.push(lines[j].trim()); j++; }
+    return block.join(' ');
+  }
+
+  /* Detect section divider ══ or ━━ */
+  function isDivider(l){ return /^[═━─]{4,}/.test(l.trim()); }
+
+  /* Detect story-ID line US-XXX-nn */
+  function isStoryId(l){ return /^US-[A-Z]+-\d+/.test(l.trim()); }
+
+  /* Detect numbered task line like "1." or "1. Title" */
+  function isNumberedLine(l){ return /^\d+\.\s/.test(l.trim()); }
+
+  /* Detect bold-ish label lines (ALL CAPS short line or ends with :) */
+  function isSectionLabel(l){
+    const t = l.trim();
+    return /^[A-Z][A-Z &,\/]{3,}:?\s*$/.test(t) || (/^[A-Z ]{6,}$/.test(t) && t.length < 60);
+  }
+
+  while(i < lines.length){
+    const raw = lines[i];
+    const t = raw.trim();
+
+    if(!t){ i++; xml += oxSp(60,40); continue; }
+
+    /* ── Section dividers → section heading + spacing ── */
+    if(isDivider(t)){
+      i++;
+      /* next non-empty line is the section title */
+      while(i < lines.length && !lines[i].trim()) i++;
+      if(i < lines.length && isDivider(lines[i].trim())){ i++; continue; }
+      if(i < lines.length){
+        const title = lines[i].trim();
+        if(!isDivider(title)){
+          xml += oxSectionHeading(title);
+          numRef++; // restart list numbering for each section
+          i++;
+        }
+      }
+      /* skip trailing divider if any */
+      while(i < lines.length && isDivider(lines[i].trim())) i++;
+      continue;
+    }
+
+    /* ── Story ID: US-XXX-01 style ── */
+    if(isStoryId(t)){
+      /* Collect the story title from this line */
+      const colonIdx = t.indexOf(':');
+      let storyId = t, storyRest = '';
+      if(colonIdx > 0){ storyId = t.slice(0,colonIdx); storyRest = t.slice(colonIdx+1).trim(); }
+      xml += `<w:p><w:pPr><w:spacing w:before="140" w:after="40"/></w:pPr>
+        ${oxB(storyId + (storyRest ? ': ' : ''))}${storyRest ? oxT(storyRest) : ''}</w:p>`;
+      i++;
+      /* Any continuation lines (indented) become italic scenario */
+      while(i < lines.length && lines[i].trim() && !isStoryId(lines[i].trim()) && !isDivider(lines[i].trim())){
+        const cont = lines[i].trim();
+        if(!cont.startsWith('US-') && !isDivider(cont)){
+          xml += oxItalic(cont);
+        }
+        i++;
+      }
+      continue;
+    }
+
+    /* ── BUSINESS SCENARIO label ── */
+    if(/^BUSINESS SCENARIO/i.test(t)){
+      xml += oxLabel('Business Scenario:');
+      i++;
+      while(i < lines.length && lines[i].trim() && !isDivider(lines[i].trim())){
+        xml += oxBody(lines[i].trim());
+        i++;
+      }
+      continue;
+    }
+
+    /* ── ENTITY SCHEMAS label ── */
+    if(/^ENTITY SCHEMA/i.test(t)){
+      xml += oxLabel('Entity Schemas:');
+      i++;
+      /* collect schema lines until next major divider */
+      while(i < lines.length && !isDivider(lines[i].trim())){
+        const sl = lines[i].trim();
+        if(sl) xml += oxBody(sl);
+        i++;
+      }
+      continue;
+    }
+
+    /* ── "Data Source:" line ── */
+    if(/^Data Source:/i.test(t) || /^INPUT:/i.test(t) || /^OUTPUT:/i.test(t)){
+      const col = t.indexOf(':');
+      xml += oxDataSource(t.slice(0,col+1)+' ', t.slice(col+1).trim());
+      i++; continue;
+    }
+
+    /* ── Numbered item: "1. Title\nscenario text" ── */
+    if(isNumberedLine(t)){
+      const dotIdx = t.indexOf('.');
+      const title = t.slice(dotIdx+1).trim();
+      xml += `<w:p><w:pPr>
+        <w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>
+        <w:spacing w:before="140" w:after="40"/>
+      </w:pPr><w:r><w:rPr><w:b/><w:sz w:val="21"/>
+        <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
+        <w:t xml:space="preserve">${escXml(title)}</w:t></w:r></w:p>`;
+      i++;
+      /* following lines until blank or next numbered item = italic scenario */
+      while(i < lines.length){
+        const next = lines[i].trim();
+        if(!next || isNumberedLine(next) || isDivider(next) || isStoryId(next)) break;
+        /* sub-bullet lines starting with • or - */
+        if(/^[•\-\*]/.test(next)){
+          xml += oxSubBullet(oxI(next.replace(/^[•\-\*]\s*/,'')));
+        } else {
+          xml += oxItalic(next);
+        }
+        i++;
+      }
+      continue;
+    }
+
+    /* ── Bullet lines (•, *, -) ── */
+    if(/^[•\-\*]/.test(t)){
+      xml += oxBullet(oxT(t.replace(/^[•\-\*]\s*/,'')));
+      i++; continue;
+    }
+
+    /* ── SCOPE/CONSTRAINT/NOTE labels ── */
+    if(/^(SCOPE|CONSTRAINT|NOTE|ASSUMPTION):/i.test(t)){
+      xml += `<w:p><w:pPr><w:spacing w:before="80" w:after="40"/><w:ind w:left="720"/></w:pPr>
+        ${oxB(t.replace(/:.*$/,':')+' ')}${oxI(t.replace(/^[^:]+:\s*/,''))}</w:p>`;
+      i++; continue;
+    }
+
+    /* ── Lines that look like ALL-CAPS headings (section labels) ── */
+    if(isSectionLabel(t)){
+      xml += oxLabel(t);
+      i++; continue;
+    }
+
+    /* ── Code-ish lines (indented or start with $, #, keywords) ── */
+    if(/^\s{2,}/.test(raw) || /^(\$|#|\/\/)/.test(t) ||
+       /^(import|from|def |class |if |for |while |SELECT|CREATE|INSERT|UPDATE|DELETE|USE |db\.|spark\.|awk|sed|grep|bash|python|pip)/i.test(t)){
+      xml += `<w:p><w:pPr><w:spacing w:before="20" w:after="20"/><w:ind w:left="720"/></w:pPr>
+        <w:r><w:rPr><w:sz w:val="18"/><w:color w:val="1a1a1a"/>
+          <w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/></w:rPr>
+          <w:t xml:space="preserve">${escXml(t)}</w:t></w:r></w:p>`;
+      i++; continue;
+    }
+
+    /* ── Default: plain body text ── */
+    xml += oxBody(t);
+    i++;
+  }
+  return xml;
+}
+
+/* ══════════════════════════════════════════════════════════
+   BUILD FULL PDF-STYLE DOCUMENT BODY
+══════════════════════════════════════════════════════════ */
+function buildPdfStyleDocx(sector, entities, reqText, solText){
+  const e0=entities[0]||'Entity_A', e1=entities[1]||'Entity_B',
+        e2=entities[2]||'Entity_C', e3=entities[3]||'Entity_D';
+  let xml = '';
+
+  /* ── Cover / Title block ── */
+  xml += oxLabel('Project Title:');
+  xml += `<w:p><w:pPr><w:spacing w:before="80" w:after="200"/></w:pPr>
+    <w:r><w:rPr><w:b/><w:sz w:val="26"/><w:color w:val="1F3864"/>
+      <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
+    <w:t xml:space="preserve">"End-to-End ${escXml(sector)} Data Engineering Pipeline for Scalable Analytics and Reporting"</w:t>
+    </w:r></w:p>`;
+
+  /* ── Dataset Source Overview ── */
+  xml += oxPageBreak();
+  xml += oxSectionHeading('Dataset Source Overview:');
+  xml += oxSp(60,60);
+  xml += oxDatasetTable([
+    ['CSV',           `${e0.toLowerCase()}.csv`],
+    ['JSON',          `${e1.toLowerCase()}.json`],
+    ['Excel (.xlsx)', `${e2.toLowerCase()}.xlsx`],
+    ['XML / Parquet', `${e3.toLowerCase()}.xml`],
+  ]);
+
+  /* ── Entity Schemas ── */
+  xml += oxSchemaTable3(`Schema Details for ${e0}:`, [
+    [1,'id','Unique numeric identifier for each record'],
+    [2,'name','Full name of the entity (non-Indian, Western/European)'],
+    [3,'status','Current status: ACTIVE, INACTIVE, PENDING, ERROR, ARCHIVED'],
+    [4,'created_date','Date the record was created (YYYY-MM-DD)'],
+    [5,'region','Geographic region associated with the record'],
+    [6,'score','Numeric performance or quality score (0–100)'],
+    [7,'is_active','Flag indicating whether the record is currently active'],
+  ]);
+  xml += oxSchemaTable3(`Schema Details for ${e1}:`, [
+    [1,'record_id','Unique identifier for the JSON record'],
+    [2,'entity_ref',`Foreign key referencing ${e0}(id)`],
+    [3,'category','Business category label for grouping records'],
+    [4,'value','Monetary or numeric value associated with the record'],
+    [5,'last_updated','ISO 8601 timestamp of the most recent update'],
+    [6,'notes','Optional free-text notes or remarks'],
+  ]);
+  xml += oxSchemaTable3(`Schema Details for ${e2}:`, [
+    [1,'seq_id','Sequential auto-increment identifier'],
+    [2,'description','Human-readable task or item description'],
+    [3,'assigned_to','Name of the person assigned to this item'],
+    [4,'priority','Priority level: LOW, MED, or HIGH'],
+    [5,'completion_pct','Percentage of task completion (0.00–100.00)'],
+  ]);
+  xml += oxSchemaTable3(`Schema Details for ${e3}:`, [
+    [1,'log_id','Unique identifier for each log entry'],
+    [2,'source_ref',`Foreign key referencing ${e0}(id)`],
+    [3,'event_type','Event type: STATUS_CHANGE, UPDATE, DELETE, CREATE, AUDIT, ALERT'],
+    [4,'details','Structured JSON payload with event-specific metadata'],
+    [5,'timestamp','Date and time the event was logged'],
+    [6,'severity','Severity: LOW, MED, HIGH, or CRITICAL'],
+  ]);
+
+  /* ── Requirements (structured) ── */
+  xml += oxPageBreak();
+  xml += oxSectionHeading('Implementation — Requirements');
+  xml += plainToStructuredOoxml(reqText, sector, entities);
+
+  /* ── Solutions (structured) ── */
+  if(solText){
+    xml += oxPageBreak();
+    xml += oxSectionHeading('Solutions & Code');
+    xml += plainToStructuredOoxml(solText, sector, entities);
+  }
+
+  return xml;
+}
+
+/* ── DOWNLOAD COMBINED .docx (PDF-style) ────────────────── */
 function downloadCombined(){
   if(!currentReq && !currentSol){ showToast('error','No content to download'); return; }
-
-  /* Convert a plain-text block to OOXML paragraphs */
-  function plainToOoxml(text){
-    return text.split('\n').map(line => {
-      /* Section divider lines (═══ or ━━━) → styled heading paragraph */
-      if(/^[═━]{4,}/.test(line)){
-        return `<w:p>
-          <w:pPr><w:spacing w:before="280" w:after="80"/>
-            <w:pBdr><w:bottom w:val="single" w:sz="4" w:space="1" w:color="DDDDDD"/></w:pBdr>
-          </w:pPr>
-          <w:r>
-            <w:rPr><w:b/><w:sz w:val="20"/><w:color w:val="2E75B6"/>
-              <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
-            <w:t xml:space="preserve">${escXml(line)}</w:t>
-          </w:r>
-        </w:p>`;
-      }
-      /* US-xxx story IDs get slight emphasis */
-      if(/^US-[A-Z]+-\d+/.test(line.trim())){
-        return `<w:p>
-          <w:pPr><w:spacing w:before="120" w:after="40"/></w:pPr>
-          <w:r>
-            <w:rPr><w:b/><w:sz w:val="19"/><w:color w:val="1F4E79"/>
-              <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
-            <w:t xml:space="preserve">${escXml(line)}</w:t>
-          </w:r>
-        </w:p>`;
-      }
-      /* Normal line */
-      return `<w:p>
-        <w:pPr><w:spacing w:after="40"/></w:pPr>
-        <w:r>
-          <w:rPr><w:sz w:val="18"/><w:color w:val="333333"/>
-            <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
-          <w:t xml:space="preserve">${escXml(line)}</w:t>
-        </w:r>
-      </w:p>`;
-    }).join('');
-  }
-
-  /* Section banner heading */
-  function sectionBanner(label){
-    return `<w:p>
-      <w:pPr>
-        <w:spacing w:before="480" w:after="160"/>
-        <w:pBdr>
-          <w:bottom w:val="single" w:sz="8" w:space="1" w:color="2E75B6"/>
-        </w:pBdr>
-      </w:pPr>
-      <w:r>
-        <w:rPr>
-          <w:b/><w:sz w:val="30"/><w:color w:val="1F4E79"/>
-          <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/>
-        </w:rPr>
-        <w:t>${escXml(label)}</w:t>
-      </w:r>
-    </w:p>`;
-  }
-
-  /* Assemble body */
-  let bodyXml = '';
-
-  if(currentReq){
-    bodyXml += sectionBanner('REQUIREMENTS');
-    bodyXml += plainToOoxml(currentReq);
-  }
-
-  if(currentSol){
-    bodyXml += sectionBanner('SOLUTIONS');
-    bodyXml += plainToOoxml(currentSol);
-  }
-
-  /* Schema comes last, already OOXML with tables */
-  if(currentSchema){
-    bodyXml += `<w:p><w:pPr><w:spacing w:before="480"/></w:pPr></w:p>`;
-    bodyXml += currentSchema;
-  }
-
-  const blob = makeRichDocx(bodyXml, RICH_STYLES_XML);
+  const entities = getEntities(selectedSector||'');
+  const bodyXml = buildPdfStyleDocx(selectedSector||'Capstone', entities, currentReq, currentSol);
+  const blob = makeRichDocx2(bodyXml);
   const safe=(selectedSector||'output').replace(/ & /g,'_').replace(/ /g,'_');
   const ts=new Date().toISOString().slice(0,10);
   triggerDownload(blob, `${safe}_capstone_${ts}.docx`);

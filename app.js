@@ -1103,20 +1103,41 @@ async function generate(){
 
     if(apiKey){
       const systemPrompt=
-`You are an expert capstone project requirement generator for data engineering students.
-Generate detailed, realistic capstone project documents.
+`You are an expert capstone project document generator for data engineering students.
+Generate a complete, professional capstone project document that exactly matches this structure and style.
 Respond ONLY with valid JSON — no markdown fences, no preamble.
-JSON must have exactly two string keys: "requirements" and "solutions".
+JSON must have exactly two keys: "requirements" and "solutions".
+
+DOCUMENT STRUCTURE (follow this exact order in "requirements"):
+1. Project Title
+2. Business Scenario (plain narrative paragraphs + bullet lists)
+3. Dataset Source Overview (pipe-table format)
+4. Schema Details for each entity (pipe-table, 3 columns: SL No | Column Name | Description)
+5. Implementation sections in this order:
+   - Implement requirements using Unix Commands.  (Data Source: entity.csv)
+   - Implement requirements using Unix Shell Scripts.  (Data Source: entity.csv)
+   - Implement requirements using MongoDB.  (Data Source: entity.json)
+   - Implement requirements using Python.  (Data Source: entity.xlsx)
+   - Implement requirements using PySpark Core Program.  (Data Source: entity.csv)
+   - Implement requirements using PySpark Core, DataFrame and SQL.
+   - Implement requirements using Database Programming in MySQL.
+   - Implement requirements using PowerBI.
+
+FORMAT RULES (strictly follow):
+- Each implementation section starts with "Implement requirements using X." on its own line
+- Each task is: a number followed by period, then bold title, then italic scenario description on the next lines
+- Example format for a task:
+  1. Task Title Here
+  The scenario team explains the business need here in italics. They want specific output.
+- Use ONLY these job roles: Data Engineer, Junior Data Engineer, Python Developer, QA Analyst, Reporting Analyst, Data Analyst, ETL Developer, System Administrator, Operations Analyst, BI Developer, Database Developer, Support Engineer
+- Do NOT use: Chief Architect, Director, VP, Senior Solution Architect, Enterprise Architect, Distinguished Engineer, Principal Engineer
+- Keep difficulty beginner-to-intermediate (academic capstone level)
+- Use realistic, practical scenario descriptions (not abstract)
+- Generate 6-8 tasks per section minimum
+- Solutions must include working code snippets for every task
 
 COMPLEXITY LEVEL: ${cmeta.label.toUpperCase()}
-${cmeta.modifier}
-
-Rules:
-- All requirements MUST be user stories: "As a [role], I want to [action] so that [benefit]."
-- Follow these 7 categories strictly in "requirements"
-- "solutions" must include a US-xxx reference for EVERY story and provide complete working code
-- Vary the stories each run — never repeat the same wording
-- No Indian names. No real/registered company names.`;
+${cmeta.modifier}`;
 
       const resp=await fetch('https://api.anthropic.com/v1/messages',{
         method:'POST',
@@ -1529,7 +1550,7 @@ function oxSectionHeading(text){ return (
 
 /* plain body paragraph */
 function oxBody(text){ return (
-  `<w:p><w:pPr><w:spacing w:before="60" w:after="60"/></w:pPr>
+  `<w:p><w:pPr><w:spacing w:before="40" w:after="40"/></w:pPr>
    <w:r><w:rPr><w:sz w:val="20"/>
      <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
    <w:t xml:space="preserve">${escXml(text)}</w:t></w:r></w:p>`);
@@ -1537,7 +1558,7 @@ function oxBody(text){ return (
 
 /* italic indented scenario description */
 function oxItalic(text){ return (
-  `<w:p><w:pPr><w:spacing w:before="40" w:after="120"/>
+  `<w:p><w:pPr><w:spacing w:before="30" w:after="100"/>
      <w:ind w:left="720"/></w:pPr>
    <w:r><w:rPr><w:i/><w:sz w:val="20"/>
      <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
@@ -1592,7 +1613,7 @@ function oxBI(text){ return (
 function oxNumTitle(text, numRef){ return (
   `<w:p><w:pPr>
      <w:numPr><w:ilvl w:val="0"/><w:numId w:val="${numRef||1}"/></w:numPr>
-     <w:spacing w:before="140" w:after="40"/>
+     <w:spacing w:before="120" w:after="30"/>
    </w:pPr>
    <w:r><w:rPr><w:b/><w:sz w:val="21"/>
      <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
@@ -1601,7 +1622,7 @@ function oxNumTitle(text, numRef){ return (
 
 /* empty spacer */
 function oxSp(before,after){ return (
-  `<w:p><w:pPr><w:spacing w:before="${before||120}" w:after="${after||60}"/></w:pPr></w:p>`);
+  `<w:p><w:pPr><w:spacing w:before="${before||60}" w:after="${after||40}"/></w:pPr></w:p>`);
 }
 
 /* page break */
@@ -1712,75 +1733,166 @@ function oxSchemaTable3(title, rows){
 
 /* ══════════════════════════════════════════════════════════
    PARSE PLAIN TEXT → STRUCTURED OOXML
-   Converts the demo/AI text output into the PDF-style layout
+   Converts structured text content into PDF-style layout
 ══════════════════════════════════════════════════════════ */
 function plainToStructuredOoxml(text, sector, entities){
   let xml = '';
   const lines = text.split('\n');
   let i = 0;
-  let numRef = 1; // incremented per section to restart numbering
 
-  /* Helper: collect consecutive non-empty lines as a paragraph */
-  function peekBlock(){
-    const block = [];
-    let j = i;
-    while(j < lines.length && lines[j].trim()) { block.push(lines[j].trim()); j++; }
-    return block.join(' ');
-  }
-
-  /* Detect section divider ══ or ━━ */
   function isDivider(l){ return /^[═━─]{4,}/.test(l.trim()); }
-
-  /* Detect story-ID line US-XXX-nn */
   function isStoryId(l){ return /^US-[A-Z]+-\d+/.test(l.trim()); }
-
-  /* Detect numbered task line like "1." or "1. Title" */
   function isNumberedLine(l){ return /^\d+\.\s/.test(l.trim()); }
-
-  /* Detect bold-ish label lines (ALL CAPS short line or ends with :) */
-  function isSectionLabel(l){
-    const t = l.trim();
-    return /^[A-Z][A-Z &,\/]{3,}:?\s*$/.test(t) || (/^[A-Z ]{6,}$/.test(t) && t.length < 60);
-  }
+  function isPipeTable(l){ return l.includes('|') && l.trim().startsWith(/\d|SL/i.exec(l.trim())||l.trim()[0]); }
 
   while(i < lines.length){
     const raw = lines[i];
-    const t = raw.trim();
+    const t   = raw.trim();
 
-    if(!t){ i++; xml += oxSp(60,40); continue; }
+    /* blank lines — minimal space */
+    if(!t){ i++; continue; }
 
-    /* ── Section dividers → section heading + spacing ── */
-    if(isDivider(t)){
+    /* ── Page break markers ── */
+    if(t === '---PAGE---'){ xml += oxPageBreak(); i++; continue; }
+
+    /* ── Section dividers (═══ ━━━) → skip, next line is heading ── */
+    if(isDivider(t)){ i++; continue; }
+
+    /* ── "Project Title:" label ── */
+    if(/^Project Title:/i.test(t)){
+      xml += oxLabel('Project Title:');
       i++;
-      /* next non-empty line is the section title */
+      /* next non-empty line is the title itself */
       while(i < lines.length && !lines[i].trim()) i++;
-      if(i < lines.length && isDivider(lines[i].trim())){ i++; continue; }
       if(i < lines.length){
-        const title = lines[i].trim();
-        if(!isDivider(title)){
-          xml += oxSectionHeading(title);
-          numRef++; // restart list numbering for each section
-          i++;
-        }
+        xml += `<w:p><w:pPr><w:spacing w:before="60" w:after="200"/></w:pPr>
+          <w:r><w:rPr><w:b/><w:sz w:val="26"/><w:color w:val="1F3864"/>
+            <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
+          <w:t xml:space="preserve">${escXml(lines[i].trim())}</w:t></w:r></w:p>`;
+        i++;
       }
-      /* skip trailing divider if any */
-      while(i < lines.length && isDivider(lines[i].trim())) i++;
       continue;
     }
 
-    /* ── Story ID: US-XXX-01 style ── */
-    if(isStoryId(t)){
-      /* Collect the story title from this line */
-      const colonIdx = t.indexOf(':');
-      let storyId = t, storyRest = '';
-      if(colonIdx > 0){ storyId = t.slice(0,colonIdx); storyRest = t.slice(colonIdx+1).trim(); }
-      xml += `<w:p><w:pPr><w:spacing w:before="140" w:after="40"/></w:pPr>
-        ${oxB(storyId + (storyRest ? ': ' : ''))}${storyRest ? oxT(storyRest) : ''}</w:p>`;
+    /* ── "Business Scenario:" heading ── */
+    if(/^Business Scenario:/i.test(t)){
+      xml += oxLabel('Business Scenario:');
       i++;
-      /* Any continuation lines (indented) become italic scenario */
-      while(i < lines.length && lines[i].trim() && !isStoryId(lines[i].trim()) && !isDivider(lines[i].trim())){
+      while(i < lines.length){
+        const next = lines[i].trim();
+        if(!next){ i++; continue; }
+        /* stop at next major section */
+        if(/^Dataset Source|^Schema Details|^Implementation:|^Implement requirements/i.test(next)) break;
+        if(/^•/.test(next)){
+          xml += oxBullet(oxT(next.replace(/^•\s*/,'')));
+        } else {
+          xml += oxBody(next);
+        }
+        i++;
+      }
+      continue;
+    }
+
+    /* ── "Dataset Source Overview:" ── */
+    if(/^Dataset Source Overview:/i.test(t)){
+      xml += oxPageBreak();
+      xml += oxSectionHeading('Dataset Source Overview:');
+      i++;
+      /* skip blank lines before table */
+      while(i < lines.length && !lines[i].trim()) i++;
+      /* collect pipe-table rows (skip header row "Source Type | File Name") */
+      const tableRows = [];
+      while(i < lines.length && (lines[i].includes('|') || !lines[i].trim())){
+        const l = lines[i].trim();
+        if(!l){ i++; continue; }
+        /* stop if we hit a non-table line */
+        if(!l.includes('|')) break;
+        const parts = l.split('|').map(p=>p.trim()).filter(Boolean);
+        if(parts.length >= 2 && !/^Source Type/i.test(parts[0]) && !/^-+/.test(parts[0])){
+          tableRows.push([parts[0], parts[1]]);
+        }
+        i++;
+      }
+      if(tableRows.length) xml += oxDatasetTable(tableRows);
+      continue;
+    }
+
+    /* ── "Schema Details for X:" ── */
+    if(/^Schema Details for /i.test(t)){
+      xml += oxLabel(t);
+      i++;
+      /* skip blank lines before table */
+      while(i < lines.length && !lines[i].trim()) i++;
+      /* skip header row "SL No | Column Name | Description" */
+      if(i < lines.length && /^SL No/i.test(lines[i].trim())) i++;
+      /* skip separator line "---" if present */
+      while(i < lines.length && /^[-|]+$/.test(lines[i].trim())) i++;
+      /* collect data rows */
+      const schemaRows = [];
+      while(i < lines.length){
+        const sl = lines[i].trim();
+        if(!sl){ i++; continue; }           /* skip blank lines inside table */
+        if(!sl.includes('|')) break;         /* stop at non-table line */
+        if(/^Schema Details|^Dataset|^Implementation|^Implement/i.test(sl)) break;
+        const parts = sl.split('|').map(p=>p.trim());
+        if(parts.length >= 3 && /^\d+$/.test(parts[0])){
+          schemaRows.push([parseInt(parts[0]), parts[1], parts[2]]);
+        }
+        i++;
+      }
+      if(schemaRows.length) xml += oxSchemaTable3('', schemaRows);
+      continue;
+    }
+
+    /* ── "Implementation:" standalone label ── */
+    if(/^Implementation:$/i.test(t)){
+      xml += oxPageBreak();
+      xml += oxSectionHeading('Implementation:');
+      i++; continue;
+    }
+
+    /* ── "Implement requirements using X." heading ── */
+    if(/^Implement requirements using/i.test(t)){
+      xml += `<w:p><w:pPr><w:spacing w:before="200" w:after="80"/></w:pPr>
+        <w:r><w:rPr><w:b/><w:sz w:val="22"/>
+          <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
+        <w:t xml:space="preserve">${escXml(t)}</w:t></w:r></w:p>`;
+      i++; continue;
+    }
+
+    /* ── "Data Source: xxx" ── */
+    if(/^Data Source:/i.test(t)){
+      const col = t.indexOf(':');
+      xml += oxDataSource(t.slice(0,col+1)+' ', t.slice(col+1).trim());
+      i++; continue;
+    }
+
+    /* ── "Note:" lines ── */
+    if(/^Note:/i.test(t)){
+      xml += `<w:p><w:pPr><w:spacing w:before="60" w:after="60"/></w:pPr>
+        ${oxB('Note: ')}${oxI(t.slice(5).trim())}</w:p>`;
+      i++; continue;
+    }
+
+    /* ── US-xxx story ID lines ── */
+    if(isStoryId(t)){
+      const colon = t.indexOf(':');
+      const id   = colon>0 ? t.slice(0,colon) : t;
+      const rest = colon>0 ? t.slice(colon+1).trim() : '';
+      xml += `<w:p><w:pPr><w:spacing w:before="120" w:after="30"/></w:pPr>
+        ${oxB(id+(rest?': ':''))}${rest?oxT(rest):''}</w:p>`;
+      i++;
+      while(i < lines.length && lines[i].trim() &&
+            !isStoryId(lines[i].trim()) && !isDivider(lines[i].trim()) &&
+            !isNumberedLine(lines[i].trim()) &&
+            !/^Implement requirements|^Data Source:|^US-/i.test(lines[i].trim())){
         const cont = lines[i].trim();
-        if(!cont.startsWith('US-') && !isDivider(cont)){
+        if(/^(INPUT|OUTPUT|SCOPE):/i.test(cont)){
+          xml += `<w:p><w:pPr><w:spacing w:before="20" w:after="20"/><w:ind w:left="720"/></w:pPr>
+            ${oxB(cont.split(':')[0]+': ')}${oxI(cont.slice(cont.indexOf(':')+1).trim())}</w:p>`;
+        } else if(/^[•\-\*]/.test(cont)){
+          xml += oxSubBullet(oxI(cont.replace(/^[•\-\*]\s*/,'')));
+        } else {
           xml += oxItalic(cont);
         }
         i++;
@@ -1788,55 +1900,43 @@ function plainToStructuredOoxml(text, sector, entities){
       continue;
     }
 
-    /* ── BUSINESS SCENARIO label ── */
-    if(/^BUSINESS SCENARIO/i.test(t)){
-      xml += oxLabel('Business Scenario:');
-      i++;
-      while(i < lines.length && lines[i].trim() && !isDivider(lines[i].trim())){
-        xml += oxBody(lines[i].trim());
-        i++;
-      }
-      continue;
-    }
-
-    /* ── ENTITY SCHEMAS label ── */
-    if(/^ENTITY SCHEMA/i.test(t)){
-      xml += oxLabel('Entity Schemas:');
-      i++;
-      /* collect schema lines until next major divider */
-      while(i < lines.length && !isDivider(lines[i].trim())){
-        const sl = lines[i].trim();
-        if(sl) xml += oxBody(sl);
-        i++;
-      }
-      continue;
-    }
-
-    /* ── "Data Source:" line ── */
-    if(/^Data Source:/i.test(t) || /^INPUT:/i.test(t) || /^OUTPUT:/i.test(t)){
-      const col = t.indexOf(':');
-      xml += oxDataSource(t.slice(0,col+1)+' ', t.slice(col+1).trim());
-      i++; continue;
-    }
-
-    /* ── Numbered item: "1. Title\nscenario text" ── */
+    /* ── Numbered task items: "1. Title" ── */
     if(isNumberedLine(t)){
-      const dotIdx = t.indexOf('.');
-      const title = t.slice(dotIdx+1).trim();
+      const dot   = t.indexOf('.');
+      const title = t.slice(dot+1).trim();
       xml += `<w:p><w:pPr>
         <w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>
-        <w:spacing w:before="140" w:after="40"/>
+        <w:spacing w:before="140" w:after="30"/>
       </w:pPr><w:r><w:rPr><w:b/><w:sz w:val="21"/>
         <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
         <w:t xml:space="preserve">${escXml(title)}</w:t></w:r></w:p>`;
       i++;
-      /* following lines until blank or next numbered item = italic scenario */
+      /* skip single blank line between title and scenario */
+      while(i < lines.length && !lines[i].trim()) i++;
+      /* collect scenario lines until next numbered item / heading */
       while(i < lines.length){
         const next = lines[i].trim();
-        if(!next || isNumberedLine(next) || isDivider(next) || isStoryId(next)) break;
-        /* sub-bullet lines starting with • or - */
+        /* stop conditions */
+        if(isNumberedLine(next) || isDivider(next) || isStoryId(next)) break;
+        if(/^Implement requirements|^Data Source:|^Schema Details|^Implementation:|^Dataset Source/i.test(next)) break;
+        /* blank line = end of this task's scenario block */
+        if(!next){
+          /* peek ahead: if next non-blank line is another numbered item or heading, stop */
+          let j = i+1;
+          while(j < lines.length && !lines[j].trim()) j++;
+          if(j >= lines.length) break;
+          const peek = lines[j].trim();
+          if(isNumberedLine(peek) || isDivider(peek) ||
+             /^Implement requirements|^Data Source:|^Schema Details|^Implementation:/i.test(peek)) break;
+          /* otherwise it's a blank separator within the scenario — skip it */
+          i++;
+          continue;
+        }
         if(/^[•\-\*]/.test(next)){
           xml += oxSubBullet(oxI(next.replace(/^[•\-\*]\s*/,'')));
+        } else if(/^(INPUT|OUTPUT|SCOPE|NOTE):/i.test(next)){
+          xml += `<w:p><w:pPr><w:spacing w:before="20" w:after="20"/><w:ind w:left="720"/></w:pPr>
+            ${oxB(next.split(':')[0]+': ')}${oxI(next.slice(next.indexOf(':')+1).trim())}</w:p>`;
         } else {
           xml += oxItalic(next);
         }
@@ -1851,22 +1951,9 @@ function plainToStructuredOoxml(text, sector, entities){
       i++; continue;
     }
 
-    /* ── SCOPE/CONSTRAINT/NOTE labels ── */
-    if(/^(SCOPE|CONSTRAINT|NOTE|ASSUMPTION):/i.test(t)){
-      xml += `<w:p><w:pPr><w:spacing w:before="80" w:after="40"/><w:ind w:left="720"/></w:pPr>
-        ${oxB(t.replace(/:.*$/,':')+' ')}${oxI(t.replace(/^[^:]+:\s*/,''))}</w:p>`;
-      i++; continue;
-    }
-
-    /* ── Lines that look like ALL-CAPS headings (section labels) ── */
-    if(isSectionLabel(t)){
-      xml += oxLabel(t);
-      i++; continue;
-    }
-
-    /* ── Code-ish lines (indented or start with $, #, keywords) ── */
-    if(/^\s{2,}/.test(raw) || /^(\$|#|\/\/)/.test(t) ||
-       /^(import|from|def |class |if |for |while |SELECT|CREATE|INSERT|UPDATE|DELETE|USE |db\.|spark\.|awk|sed|grep|bash|python|pip)/i.test(t)){
+    /* ── Code-like lines (indented or starts with $, #, keywords) ── */
+    if(/^\s{2,}/.test(raw) ||
+       /^(\$|#|\/\/|use |db\.|spark\.|from |import |def |class |if |for |SELECT|CREATE|INSERT|UPDATE|DELETE|CALL|DELIMITER|awk|sed|grep|bash)/.test(t)){
       xml += `<w:p><w:pPr><w:spacing w:before="20" w:after="20"/><w:ind w:left="720"/></w:pPr>
         <w:r><w:rPr><w:sz w:val="18"/><w:color w:val="1a1a1a"/>
           <w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/></w:rPr>
@@ -1874,7 +1961,37 @@ function plainToStructuredOoxml(text, sector, entities){
       i++; continue;
     }
 
-    /* ── Default: plain body text ── */
+    /* ── ALL-CAPS short lines (section sub-labels) ── */
+    if(/^[A-Z][A-Z &,\/]{3,}:?\s*$/.test(t) && t.length < 60){
+      xml += oxLabel(t);
+      i++; continue;
+    }
+
+    /* ── "Solutions & Code — Sector" heading in solution text ── */
+    if(/^Solutions & Code|^Solutions —/i.test(t)){
+      xml += oxSectionHeading(t);
+      i++; continue;
+    }
+
+    /* ── "Generated:" line — skip ── */
+    if(/^Generated:/i.test(t)){ i++; continue; }
+
+    /* ── X Solutions (sub-section labels like "Unix Commands — Solutions") ── */
+    if(/\bSolutions\b/.test(t) && t.length < 80){
+      xml += `<w:p><w:pPr><w:spacing w:before="180" w:after="80"/>
+        <w:pBdr><w:bottom w:val="single" w:sz="4" w:space="1" w:color="BBBBBB"/></w:pBdr>
+      </w:pPr><w:r><w:rPr><w:b/><w:sz w:val="22"/><w:color w:val="2E74B5"/>
+        <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
+        <w:t xml:space="preserve">${escXml(t)}</w:t></w:r></w:p>`;
+      i++; continue;
+    }
+
+    /* ── Pipe-delimited table row (schema etc) — already handled above, skip ── */
+    if(t.includes('|') && /^\d+\s*\|/.test(t)){
+      i++; continue;
+    }
+
+    /* ── Default: plain body ── */
     xml += oxBody(t);
     i++;
   }
@@ -1889,65 +2006,10 @@ function buildPdfStyleDocx(sector, entities, reqText, solText){
         e2=entities[2]||'Entity_C', e3=entities[3]||'Entity_D';
   let xml = '';
 
-  /* ── Cover / Title block ── */
-  xml += oxLabel('Project Title:');
-  xml += `<w:p><w:pPr><w:spacing w:before="80" w:after="200"/></w:pPr>
-    <w:r><w:rPr><w:b/><w:sz w:val="26"/><w:color w:val="1F3864"/>
-      <w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>
-    <w:t xml:space="preserve">"End-to-End ${escXml(sector)} Data Engineering Pipeline for Scalable Analytics and Reporting"</w:t>
-    </w:r></w:p>`;
-
-  /* ── Dataset Source Overview ── */
-  xml += oxPageBreak();
-  xml += oxSectionHeading('Dataset Source Overview:');
-  xml += oxSp(60,60);
-  xml += oxDatasetTable([
-    ['CSV',           `${e0.toLowerCase()}.csv`],
-    ['JSON',          `${e1.toLowerCase()}.json`],
-    ['Excel (.xlsx)', `${e2.toLowerCase()}.xlsx`],
-    ['XML / Parquet', `${e3.toLowerCase()}.xml`],
-  ]);
-
-  /* ── Entity Schemas ── */
-  xml += oxSchemaTable3(`Schema Details for ${e0}:`, [
-    [1,'id','Unique numeric identifier for each record'],
-    [2,'name','Full name of the entity (non-Indian, Western/European)'],
-    [3,'status','Current status: ACTIVE, INACTIVE, PENDING, ERROR, ARCHIVED'],
-    [4,'created_date','Date the record was created (YYYY-MM-DD)'],
-    [5,'region','Geographic region associated with the record'],
-    [6,'score','Numeric performance or quality score (0–100)'],
-    [7,'is_active','Flag indicating whether the record is currently active'],
-  ]);
-  xml += oxSchemaTable3(`Schema Details for ${e1}:`, [
-    [1,'record_id','Unique identifier for the JSON record'],
-    [2,'entity_ref',`Foreign key referencing ${e0}(id)`],
-    [3,'category','Business category label for grouping records'],
-    [4,'value','Monetary or numeric value associated with the record'],
-    [5,'last_updated','ISO 8601 timestamp of the most recent update'],
-    [6,'notes','Optional free-text notes or remarks'],
-  ]);
-  xml += oxSchemaTable3(`Schema Details for ${e2}:`, [
-    [1,'seq_id','Sequential auto-increment identifier'],
-    [2,'description','Human-readable task or item description'],
-    [3,'assigned_to','Name of the person assigned to this item'],
-    [4,'priority','Priority level: LOW, MED, or HIGH'],
-    [5,'completion_pct','Percentage of task completion (0.00–100.00)'],
-  ]);
-  xml += oxSchemaTable3(`Schema Details for ${e3}:`, [
-    [1,'log_id','Unique identifier for each log entry'],
-    [2,'source_ref',`Foreign key referencing ${e0}(id)`],
-    [3,'event_type','Event type: STATUS_CHANGE, UPDATE, DELETE, CREATE, AUDIT, ALERT'],
-    [4,'details','Structured JSON payload with event-specific metadata'],
-    [5,'timestamp','Date and time the event was logged'],
-    [6,'severity','Severity: LOW, MED, HIGH, or CRITICAL'],
-  ]);
-
-  /* ── Requirements (structured) ── */
-  xml += oxPageBreak();
-  xml += oxSectionHeading('Implementation — Requirements');
+  /* Parse the full reqText which now contains everything in structured form */
   xml += plainToStructuredOoxml(reqText, sector, entities);
 
-  /* ── Solutions (structured) ── */
+  /* Solutions section */
   if(solText){
     xml += oxPageBreak();
     xml += oxSectionHeading('Solutions & Code');
@@ -1976,438 +2038,760 @@ function downloadBoth(){ downloadCombined(); }
 function downloadSchemaDoc(){ downloadCombined(); }
 
 /* ══════════════════════════════════════════════════════════
-   DEMO CONTENT BUILDERS
+   DEMO CONTENT BUILDERS  — PDF-matching format
+   Structure mirrors the reference document exactly:
+   numbered tasks + italic scenario descriptions per section
 ══════════════════════════════════════════════════════════ */
-function buildDemoReq(sector,entities,company,names){
-  const e0=entities[0],e1=entities[1],e2=entities[2],e3=entities[3];
-  return `BUSINESS SCENARIO
-${company} has been contracted by a leading ${sector} organisation to modernise
-their fragmented data infrastructure. Led by ${names[0]} (Chief Data Officer)
-and ${names[1]} (VP of Operations) — 6 Agile sprints.
 
-ENTITY SCHEMAS
-─────────────────────────────────────────────────────────────────────────
-1. ${e0} (CSV)
-   id INT | name VARCHAR | status VARCHAR | created_date DATE | region VARCHAR | score FLOAT | is_active BOOLEAN
+/* ── Allowed job titles (beginner–intermediate only) ─── */
+const JOB_ROLES = [
+  'Data Engineer','Junior Data Engineer','Python Developer',
+  'QA Analyst','Reporting Analyst','Data Analyst','ETL Developer',
+  'System Administrator','Operations Analyst','BI Developer',
+  'Database Developer','Support Engineer',
+];
+function role(){ return rand(JOB_ROLES); }
 
-2. ${e1} (JSON)
-   record_id INT | entity_ref INT FK→${e0}(id) | category VARCHAR | value DECIMAL | last_updated TIMESTAMP
+function buildDemoReq(sector, entities, company, names){
+  const e0=entities[0], e1=entities[1], e2=entities[2], e3=entities[3];
+  const E0=e0.toLowerCase(), E1=e1.toLowerCase(), E2=e2.toLowerCase(), E3=e3.toLowerCase();
 
-3. ${e2} (Excel .xlsx)
-   seq_id INT | description TEXT | assigned_to VARCHAR | priority ENUM | completion_pct FLOAT
+  return (
+`Project Title:
 
-4. ${e3} (XML / Parquet)
-   log_id INT | source_ref INT FK→${e0}(id) | event_type VARCHAR | details JSON | timestamp DATETIME | severity VARCHAR
+"End-to-End ${sector} Data Engineering Pipeline for Scalable Analytics and Reporting"
 
-══════════════════════════════════════════════════════════════════════════
-DATA INGESTION AND SHELL SCRIPTING
-══════════════════════════════════════════════════════════════════════════
+Business Scenario:
 
-US-ING-01: As a data engineer, I want to ingest data from multiple formats so that data from different sources can be unified into a single processing pipeline.
+A mid-sized ${sector.toLowerCase()} organisation is facing challenges in managing ${E0} records, ${E1} data, and ${E2} operations due to outdated legacy systems. These systems are unable to handle large volumes of data, lack flexibility, and do not support advanced analytics or real-time reporting.
 
-US-ING-02: As a system administrator, I want to automate ingestion workflows so that data pipelines run without manual intervention and produce repeatable, auditable results.
+The organisation wants to modernise its data infrastructure using:
 
-US-ING-03: As a DevOps engineer, I want to schedule periodic data loading so that the system processes new data at defined intervals without any human trigger.
+• Unix for file management and automation
+• MongoDB for flexible document-based storage
+• Python for data preprocessing and file handling
+• PySpark for scalable data cleansing and analytics
+• Advanced MySQL for relational operations and stored procedures
+• Power BI for interactive dashboards and business insights
 
-US-ING-04: As a data architect, I want to store ingested data in a staging
-layer with source_file and load_timestamp columns so that raw records can
-be audited before entering the cleansed layer.
+The data is fragmented across multiple formats and files, with inconsistencies such as:
 
-US-ING-05: As a developer, I want to validate file structure and schema
-during ingestion so that malformed files are rejected
-early and an error report is written to ingest_errors.log.
+• Missing values
+• Repeated records
+• Irregular date formats
+• Trailing/leading spaces
+• Inconsistent column names
+• And so on...
 
-══════════════════════════════════════════════════════════════════════════
-UNIX COMMANDS — 15 Story-Based Requirements
-══════════════════════════════════════════════════════════════════════════
+The goal is to build a robust, end-to-end data pipeline that:
 
-US-UNX-01: As a data analyst, I want to extract all rows from ${e0.toLowerCase()}.csv where status matches ERROR or PENDING so
-that problematic records are isolated before the ETL pipeline runs.
+• Cleans and integrates data from multiple sources
+• Performs complex transformations and analytics
+• Enables real-time reporting and decision-making
 
-US-UNX-02: As a data engineer, I want to compute the average score per region from ${e0.toLowerCase()}.csv so that a regional KPI summary is produced
-without loading data into any database.
+Dataset Source Overview:
 
-US-UNX-03: As a system admin, I want to replace all N/A, null, and -- values with 0 in numeric fields of ${e1.toLowerCase()}.txt so that
-downstream processes do not fail on non-numeric strings.
+Source Type | File Name
+CSV         | ${E0}.csv
+JSON        | ${E1}.json
+Excel       | ${E2}.xlsx
+XML/Parquet | ${E3}.xml
 
-US-UNX-04: As a reporting analyst, I want to rank the top 20 category values by frequency from ${e2.toLowerCase()}.csv so that they are ready for filter configuration.
+Schema Details for ${e0}:
 
-US-UNX-05: As a DevOps engineer, I want to build a daily manifest.txt of recently changed files so that the backup script processes only modified data files.
+SL No | Column Name   | Description
+1     | id            | Unique numeric identifier for each record
+2     | name          | Full name of the entity (Western/European)
+3     | status        | Current status: ACTIVE, INACTIVE, PENDING, ERROR
+4     | created_date  | Date the record was created (YYYY-MM-DD)
+5     | region        | Geographic region associated with the record
+6     | score         | Numeric performance or quality score (0–100)
+7     | is_active     | Flag indicating whether the record is currently active
 
-US-UNX-06: As a data steward, I want record counts for all 4 entity files to be printed to the console and saved to size_report.txt.
+Schema Details for ${e1}:
 
-US-UNX-07: As a data engineer, I want to compare ${e0.toLowerCase()}_v1.csv
-and ${e0.toLowerCase()}_v2.csv so that records changed between pipeline runs
-are identified and flagged automatically.
+SL No | Column Name   | Description
+1     | record_id     | Unique identifier for the JSON record
+2     | entity_ref    | Foreign key referencing ${e0}(id)
+3     | category      | Business category label for grouping records
+4     | value         | Monetary or numeric value associated with the record
+5     | last_updated  | ISO 8601 timestamp of the most recent update
+6     | notes         | Optional free-text notes or remarks
 
-US-UNX-08: As a pipeline engineer, I want to emit a unified schema report from all 4 files so that schema drift is detected before any transformation step.
+Schema Details for ${e2}:
 
-US-UNX-09: As a data analyst, I want to count distinct values in the last column of ${e1.toLowerCase()}.txt
-so that field cardinality is documented per entity.
+SL No | Column Name    | Description
+1     | seq_id         | Sequential auto-increment identifier
+2     | description    | Human-readable task or item description
+3     | assigned_to    | Name of the person assigned to this item
+4     | priority       | Priority level: LOW, MED, or HIGH
+5     | completion_pct | Percentage of task completion (0.00–100.00)
 
-US-UNX-10: As a QA engineer, I want to compute null density as a percentage per entity file so that a quality threshold check can gate the pipeline run.
+Schema Details for ${e3}:
 
-US-UNX-11: As a systems engineer, I want to list files exceeding 10 MB and redirect to large_files.txt so that storage alerts are triggered before disk quotas are breached.
+SL No | Column Name | Description
+1     | log_id      | Unique identifier for each log entry
+2     | source_ref  | Foreign key referencing ${e0}(id)
+3     | event_type  | Event type: STATUS_CHANGE, UPDATE, DELETE, CREATE, AUDIT
+4     | details     | Structured JSON payload with event metadata
+5     | timestamp   | Date and time the event was logged
+6     | severity    | Severity: LOW, MED, HIGH, or CRITICAL
 
-US-UNX-12: As a data analyst, I want to extract top-scoring records from ${e0.toLowerCase()}.csv to a flat file without any database dependency.
+Implementation:
 
-US-UNX-13: As a DevOps engineer, I want to normalise all category strings in ${e1.toLowerCase()}.txt to
-lowercase so that case-inconsistent values are unified before loading.
+Implement requirements using Unix Commands.
 
-US-UNX-14: As a pipeline engineer, I want to prepend a source_entity column to every record from all 4 files so that combined_raw.csv carries its originating file label.
+Data Source: ${E0}.csv
 
-US-UNX-15: As a DevOps engineer, I want to run inconsistency detection in parallel across all 4 entity files so that it completes in under 30 seconds on large datasets.
+1. Status-Based Record Extraction
+The operations team wants to isolate problematic records before the ETL pipeline starts. They ask the Unix team to extract all rows from ${E0}.csv where the status is ERROR or PENDING, regardless of case sensitivity.
 
-══════════════════════════════════════════════════════════════════════════
-SHELL SCRIPTING — 10 Story-Based Requirements (8 analytics · 2 cleaning)
-══════════════════════════════════════════════════════════════════════════
+2. High-Value Record Audit
+The finance team wants to audit high-value entries. They request a list of all records from ${E0}.csv where the score exceeds 80, ensuring only valid numeric entries are considered.
 
-US-SH-01: As a data steward, I want a script that iterates all 4 entity files, counts total rows, null rows, and duplicate rows, and writes a formatted audit_report.txt so that data quality KPIs are tracked daily.
+3. Top Records by Region
+The reporting team wants to understand regional distribution. They need the top five records with the highest score from each region, sorted by score in descending order.
 
-US-SH-02: As an operations analyst, I want a script that reads ${e1.toLowerCase()}.txt and computes sum, avg, max of value per category, printing an ASCII KPI table so that metrics are reviewed without any BI tool.
+4. Data Quality Check
+The IT team suspects incomplete records in ${E0}.csv. They need to count how many records have missing information in any field.
 
-US-SH-03: As a data engineer, I want a script that flags rows where score falls outside 0–100 in ${e0.toLowerCase()}.csv and writes them to anomalies.csv with an appended reason column so that outliers are quarantined before loading.
+5. Duplicate Detection
+The data steward wants to check for repeated entries. They ask for a count of duplicate rows in ${E0}.csv based on the id field.
 
-US-SH-04: As a pipeline engineer, I want a script that merges all 4 entity files into combined_dataset.csv with a prepended source_entity column so that a unified flat file is ready for batch processing.
+6. Record Count Summary
+The operations team wants a daily record count summary. They need the total number of records in all four entity files printed to the console and saved to size_report.txt.
 
-US-SH-05: As a reporting analyst, I want a script that generates a daily HTML summary of record counts, top 5 categories, and null percentages so that stakeholders receive an email-ready overview each morning.
+7. Date Range Filter
+The compliance team needs records created in a specific month. They ask for all rows from ${E0}.csv where created_date falls within the last 30 days.
 
-US-SH-06: As a data engineer, I want a script that accepts a date argument and filters ${e0.toLowerCase()}.csv by created_date, writing results to dated_extract_YYYYMMDD.csv so that point-in-time slices are produced on demand.
+Implement requirements using Unix Shell Scripts.
 
-US-SH-07: As a QA analyst, I want a script that compares row counts of raw vs cleaned files and outputs a cleaning efficiency report showing records_removed and pct_cleaned per entity so that data-loss is audited.
+Data Source: ${E0}.csv
 
-US-SH-08: As a pipeline engineer, I want a script that monitors the landing directory and triggers the ingestion pipeline on new file arrival, logging each event with timestamp, so that the pipeline is fully event-driven.
+1. Daily Audit Report
+The data governance team needs a daily quality audit. They ask the IT team to count total rows, null rows, and duplicate rows across all four entity files and save the result in a file named audit_report.txt for tracking.
 
-US-SH-09: As a data engineer, I want a script that removes rows with empty mandatory fields from ${e0.toLowerCase()}.csv, writes cleaned output to _clean.csv, and logs the removed count so that ETL receives only complete records. (Data-cleaning story 1)
+2. Anomaly Extraction Script
+The QA team needs to flag records with scores outside the valid range of 0 to 100 in ${E0}.csv. They want these written to anomalies.csv with a reason column appended for investigation.
 
-US-SH-10: As a DevOps engineer, I want a script that fixes delimiter inconsistencies in ${e2.toLowerCase()}.csv, normalising all separators to commas, so that the file conforms to CSV specification before downstream processing. (Data-cleaning story 2)
+3. Average Score Calculation
+The finance department wants to analyse performance metrics. They ask the IT team to calculate the average score of all records in ${E0}.csv, rounded to two decimal places, ignoring any missing or invalid entries. The result should be printed to the console.
 
-══════════════════════════════════════════════════════════════════════════
-FILE HANDLING
-══════════════════════════════════════════════════════════════════════════
+4. Data Cleaning and Standardisation
+The data governance team is preparing for a compliance audit. They need a cleaned version of ${E0}.csv where names have no leading or trailing spaces, missing categories are replaced with Unknown, missing values are set to 0, and all dates are converted from DD-MM-YYYY to YYYY-MM-DD format. This cleaned file should be saved as ${E0}_cleaned.csv inside the InputFiles folder.
 
-US-PY-01: As a Python developer, I want to implement file handling to read and
-write ${e0.toLowerCase()}.csv so that pre-processing and deduplication can be
-performed efficiently.
-INPUT:  data/${e0.toLowerCase()}.csv
-OUTPUT: data/${e0.toLowerCase()}_clean.csv
-SCOPE:  Remove duplicates by id, fix encoding, drop rows with null mandatory fields.
+Implement requirements using MongoDB.
 
-US-PY-02: As a data engineer, I want to process ${e1.toLowerCase()}.json
-(80k–1L records) so that nested structures are flattened and saved as ${e1.toLowerCase()}_flat.csv for database import.
+Data Source: ${E1}.json
 
-US-PY-03: As a QA tester, I want to handle file-related exceptions such as
-missing or corrupted ${e2.toLowerCase()}.xlsx files using try-except so that
-the pipeline logs a descriptive error and skips rather than crashing.
+1. Update Value for High-Priority Records
+The finance team has identified that high-priority records require a value adjustment. They request the database team to update the value field to 25000 for all records in ${E1} whose category is Premium.
 
-US-PY-04: As a developer, I want to generate cleaned output files for all 3 datasets in their required formats so that each cleaned file is immediately usable by downstream modules.
+2. Add Default Category for Uncategorised Records
+The operations team has partnered with a default category assignment. They ask the database team to set the category to General for all records in ${E1} that currently have no category listed.
 
-US-PY-05: As a data engineer, I want a script that randomly selects a sector and entity at runtime, reads the corresponding dataset, applies cleaning rules, and generates sector-specific user stories so that each execution produces unique, non-repeating requirements.
+3. Update Missing Timestamps
+The administration wants accurate timestamp records for compliance. They instruct the team to update the last_updated field to today's date for all records in ${E1} where this field is missing.
 
-══════════════════════════════════════════════════════════════════════════
-DATA CLEANING AND INCONSISTENCIES
-══════════════════════════════════════════════════════════════════════════
+4. Find High-Risk Records
+The analysis team is examining high-value entries. They need a list of all records in ${E1} where the value is greater than 15000 for further study.
 
-US-PS-01: As a data quality analyst, I want to use PySpark to identify null,
-missing, and duplicate values across all 4 entity datasets so that overall data
-quality improves before analysis begins.
+5. Count Records by Category
+The operations team is monitoring category distribution. They ask for the count of records in ${E1} grouped by category, regardless of case sensitivity.
 
-US-PS-02: As a data engineer, I want to standardise inconsistent date, text,
-and numerical formats in ${e0.toLowerCase()} so that data becomes uniform across all regions.
+6. Export Updated Records
+The data migration team needs all updated records for integration with the reporting system. They request exporting the complete updated dataset into a file named ${E1}_updated.csv and saving it in the InputFiles folder.
 
-US-PS-03: As a compliance analyst, I want to detect and resolve 10 to 15
-inconsistencies in each dataset so that reporting remains accurate and compliant with data governance policies.
+Implement requirements using Python.
 
-US-PS-04: As a data engineer, I want to apply business-rule transformation logic — normalising status enums, capping out-of-range scores, and
-forward-filling sparse columns — so that downstream analysis operates on validated data.
+Data Source: ${E2}.xlsx
 
-US-PS-05: As a data analyst, I want cleaned PySpark DataFrames to be validated
-with row-count assertions and null-count checks before writing to the cleansed
-layer so that unreliable data never reaches the BI layer.
+1. The analytics rollout is blocked because ${E2}.xlsx is messy and inconsistent. The team lead has asked you to write one Python program that will:
 
-US-PS-06: As a data engineer, I want to verify that the cleansed
-${e0.toLowerCase()} DataFrame can produce syntactically valid MySQL INSERT
-statements via a PySpark UDF so that database loading is confirmed before the
-full batch is submitted.
+• Read the file safely and trim leading/trailing spaces in every field
+• Normalise the priority field to proper capitalisation for consistent reporting
+• Convert all date fields to the standard YYYY-MM-DD format
+• Fill missing assigned_to values with Unassigned and missing completion_pct with 0
+• Skip any row that has fewer than 5 fields to avoid schema issues
+• Remove exact duplicate rows caused by repeated uploads
+• Save the fully cleansed dataset to InputFiles/${E2}_cleaned.xlsx so the PySpark jobs can run without manual fixes
 
-══════════════════════════════════════════════════════════════════════════
-CRUD OPERATIONS — 10+ Stories
-══════════════════════════════════════════════════════════════════════════
+Deliver this as a single, production-ready Python script that completes the end-to-end cleansing in one pass.
 
-US-MG-01 through US-MG-11: [Full CRUD stories for ${sector} entities]
-See solutions file for implementation code.
+Implement requirements using PySpark Core Program.
 
-══════════════════════════════════════════════════════════════════════════
-DATA PROCESSING AND ANALYSIS (RDD · SQL · DataFrame)
-══════════════════════════════════════════════════════════════════════════
+Data Source: ${E0}.csv
 
-US-RDD-01 through US-RDD-05: Distributed RDD operations on ${e0.toLowerCase()}
-US-SQL-01 through US-SQL-05: SQL analysis across all 4 entity views
-US-DF-01 through US-DF-05: DataFrame transformations and joins
+1. Remove Empty Lines for Data Integrity
+The ETL team noticed blank rows in ${E0}.csv that cause schema mismatches during Spark ingestion. They have asked you to ensure all empty lines are removed before processing begins.
 
-══════════════════════════════════════════════════════════════════════════
-ADVANCED SQL — 15 Stories (Stored Procedures & Functions)
-══════════════════════════════════════════════════════════════════════════
+2. Clean Up Name and Description Fields
+The analytics dashboard is showing inconsistent names and descriptions because of extra spaces. The data team requests that you trim all leading and trailing spaces from the name and description columns to maintain uniformity.
 
-US-ASQL-01 through US-ASQL-15: Stored procedures and functions for ${sector}
+3. Normalise Status for Consistent Grouping
+Reports are failing to group records correctly because status values appear in mixed case. The operations team wants you to standardise status by converting it to uppercase.
 
-══════════════════════════════════════════════════════════════════════════
-POWER BI TRANSFORMATIONS AND VISUALIZATION
-══════════════════════════════════════════════════════════════════════════
+4. Drop Unnecessary Column
+The ingestion pipeline includes an ExtraColumn that is not part of the schema and is causing confusion in downstream joins. The data engineering team asks you to drop this column entirely from the dataset.
 
-US-PBI-01: Power Query 15-step transformation pipeline for all 4 entities
-US-PBI-02: 10 DAX measures including RANKX, DATEADD, TOTALYTD, SWITCH+TRUE()
-US-PBI-03: 5-page interactive dashboard with drill-through and forecast
-US-PBI-04: Star schema with Calendar dimension for time-intelligence
+5. Remove Duplicate Records
+Duplicate rows have been identified due to multiple uploads. The compliance team insists on removing all exact duplicates to prevent inflated counts in reports.
 
-══════════════════════════════════════════════════════════════════════════
-AUTOMATION AND PROJECT GENERATION LOGIC
-══════════════════════════════════════════════════════════════════════════
+6. Handle Missing Score and Category Values
+The finance department needs accurate data for reconciliation. They have asked you to replace missing score values with 0 and missing category values with Unknown so that aggregations do not fail.
 
-US-AUT-01: Dynamic runtime generation of datasets and requirements
-US-AUT-02: Automated requirement authoring without manual intervention
-US-AUT-03: Complete Word document generation with AGILE sprint sheet
-`;
+Implement requirements using PySpark Core, DataFrame and SQL.
+
+Data Source: ${E0}.csv (cleansed), ${E1}.json, ${E2}.xlsx, ${E3}.xml
+
+Note: Before solving any requirement that uses entity data, first combine all entity files into a unified dataset.
+
+1. Region-wise Record Count for Capacity Planning
+The operations team wants to understand data load across regions. They have asked you to combine all entity files into a unified dataset and count how many records belong to each region. This will inform capacity planning.
+
+2. Top Entities by Average Value for Revenue Insights
+Finance leadership is reviewing entity performance. They want you to calculate the average value per category and show the top 3 categories with the highest average value.
+
+3. Status Distribution Analysis
+The QA team is assessing data quality across all entities. They ask you to count the number of records per status value across the unified dataset and present the results sorted by count descending.
+
+4. Category-wise Aggregates for Business Analysis
+Business analysts want to understand financial and demographic patterns. They request a report that groups records by category and computes total value and average score per category across all entity sources.
+
+5. Seasonal Records Filter
+The analytics team is examining trends in a specific period. They need you to filter records created between January and March of the current year and count the number of records per region during this window.
+
+6. Top Scoring Records for Incentive Programs
+HR and Finance are designing incentive schemes. They ask you to compute total score per assigned_to by aggregating records, and show the top 5 names with the highest total score.
+
+7. Active Senior Records Snapshot
+The operations team wants a snapshot of active, high-scoring senior records. Filter records where is_active is true and score is greater than 75, grouped by region and category. Show the top 5 combinations by count.
+
+Implement requirements using Database Programming in MySQL.
+
+Data Source: ${E0}.csv
+
+1. Score Category Function for Finance Review
+The finance team needs a way to classify records by score for tiered analysis. They have asked you to create a stored function named GetScoreCategory that accepts a score value and returns one of three categories based on strict rules:
+
+• Low if score is less than 40
+• Medium if score is between 40 and 75
+• High if score is greater than 75
+
+This function will be used in multiple reports and procedures to standardise score segmentation.
+
+2. Status Label Function for Operations
+The operations team needs a reusable function to map status codes to human-readable labels. Create a stored function named GetStatusLabel that accepts a status value and returns:
+
+• Active if status is ACTIVE
+• Inactive if status is INACTIVE
+• Pending Review if status is PENDING
+• Error if status is ERROR
+
+This will help standardise status display across all reports.
+
+3. Procedure to List Records by Score Category
+Auditors often request lists of records by tier for compliance checks. Build a stored procedure named ListRecordsByScoreCategory that:
+
+• Accepts a score category as input (Low, Medium, High)
+• Internally uses the GetScoreCategory function to filter records
+• Displays id, name, score, and ScoreCategory for all matching records
+
+This ensures consistent logic and easy retrieval for audits.
+
+4. Summary by Region and Score Category
+Executives want a combined view of regional performance and score distribution. Create a stored procedure named SummaryByRegionAndScore that:
+
+• Accepts no input parameters
+• Uses both functions (GetStatusLabel and GetScoreCategory)
+• Groups records by region and ScoreCategory
+• Displays Region, ScoreCategory, TotalRecords, and AverageScore
+
+This summary will be used for strategic planning and budgeting.
+
+5. Billing by Status
+Finance and HR need to identify which status types generate the most activity. Develop a stored procedure named RecordsByStatus that:
+
+• Calculates total count and average score per status
+• Displays Status and TotalRecords and AverageScore
+• Sorts the result by TotalRecords in descending order
+
+This will support resource allocation and performance benchmarking.
+
+6. Dynamic Region Statistics
+The COO wants a dynamic report for every region. Create a stored procedure named RegionStats that:
+
+• Iterates through all distinct regions in the ${E0} table
+• For each region, calculates total number of records and average score
+• Displays results in the format: Region, RecordCount, AvgScore
+
+This must handle multiple regions dynamically for scalability.
+
+Implement requirements using PowerBI.
+
+Data Source: ${E0}_powerbi.csv
+
+Schema Details:
+
+SL No | Column Name   | Description
+1     | id            | Unique identifier for each record
+2     | name          | Full name of the entity
+3     | status        | Current status of the record
+4     | created_date  | Date the record was created
+5     | region        | Geographic region
+6     | score         | Numeric performance score
+7     | is_active     | Active flag (true/false)
+8     | category      | Business category label
+9     | value         | Monetary value associated with the record
+10    | assigned_to   | Name of the assigned person
+
+Transformations:
+
+1. Clean Up Text Fields for Consistency
+The reporting team noticed inconsistent spacing in names, regions, and category fields, which breaks slicers and filters. They have asked you to remove leading and trailing spaces from all text fields like name, region, and category.
+
+2. Handle Missing Category Values
+Dashboards show blank entries for category, making analysis unreliable. Replace all blank or null values in category with NA to maintain data integrity.
+
+3. Remove Duplicate Records
+The data quality team found duplicate rows due to multiple uploads. Remove all duplicate rows from the dataset to ensure accurate counts and value totals.
+
+4. Standardise Status Values
+The operations team wants uniform status data. If status is empty or null, replace it with Unknown to reflect the default assignment.
+
+5. Convert Value to Numeric
+Some value entries are stored as text like Ten Thousand, causing aggregation errors. Convert these to numeric values and set the value column data type to Decimal Number.
+
+6. Fix Non-Numeric Score Entries
+The score column contains text values like Thirty Four or Twenty Seven. Replace these with their numeric equivalents and set the column data type to Whole Number.
+
+7. Flag Invalid Records (DAX)
+Compliance checks require identifying records where score is outside the valid range of 0 to 100. Create a new DAX column named IsInvalidScore that flags records as TRUE where score is less than 0 or greater than 100, otherwise FALSE.
+
+8. Calculate Average Score Excluding Zero (DAX)
+The analytics team wants a KPI for average score but excluding zero-value cases. Use DAX to calculate AverageScoreExcludingZero where score is greater than 0.
+
+9. Validate Status Entries (DAX)
+Data validation checks revealed entries outside the allowed status values. Create a DAX column named IsValidStatus that marks records as TRUE if status is ACTIVE, INACTIVE, PENDING, or ERROR, and FALSE otherwise.
+
+Visualisations:
+
+Operations and Capacity Planning Dashboard:
+• Count of records by region where score is greater than 75
+• Count of records by created_date (monthly trend)
+• Count of records by status (Treemap)
+• Count of records by region (Bar Chart)
+• Average score by category
+
+Finance and Revenue Insights Dashboard:
+• Average value by category
+• Sum of value by region
+• Total value (Card Visual)
+• Sum of value by status (Treemap)
+• Sum of value by assigned_to and category
+
+Quality Overview Dashboard:
+• Count of records by category where score is greater than 50
+• Count of invalid score entries (Card)
+• Average score by region
+• Count of records by is_active (Donut Chart)
+• Count of records by status (Horizontal Bar Chart)
+`);
 }
 
-function buildDemoSol(sector,entities){
-  const e0=entities[0],e1=entities[1],e2=entities[2],e3=entities[3];
+/* ── DEMO SOLUTIONS ──────────────────────────────────────── */
+function buildDemoSol(sector, entities){
+  const e0=entities[0], e1=entities[1], e2=entities[2], e3=entities[3];
+  const E0=e0.toLowerCase(), E1=e1.toLowerCase(), E2=e2.toLowerCase(), E3=e3.toLowerCase();
   const db=sector.replace(/ & /g,'_').replace(/ /g,'_').toLowerCase()+'_db';
-  return `SOLUTIONS & ANSWERS — ${sector}
+
+  return (
+`Solutions & Code — ${sector}
 Generated: ${new Date().toLocaleString()}
 
-══════════════════════════════════════════════════════════════════════════
-DATA INGESTION — SOLUTIONS
-══════════════════════════════════════════════════════════════════════════
+Unix Commands — Solutions
 
-US-ING-01 — Ingest multiple formats
-#!/bin/bash
-mkdir -p staging
-for f in landing/*.csv; do cp "$f" staging/; echo "CSV ingested: $f"; done
-for f in landing/*.json; do cp "$f" staging/; echo "JSON ingested: $f"; done
-python3 -c "
-import pandas as pd, glob, os
-for f in glob.glob('landing/*.xlsx'):
-    df = pd.read_excel(f)
-    out = 'staging/' + os.path.basename(f).replace('.xlsx','.csv')
-    df.to_csv(out, index=False)
-    print('XLSX ingested:', f)
-"
+Data Source: ${E0}.csv
 
-US-ING-05 — Validate schema
-#!/bin/bash
-FILE="staging/${e0.toLowerCase()}.csv"
-EXPECTED_COLS=7
-ACTUAL=$(head -1 "$FILE" | tr ',' '\n' | wc -l)
-if [ "$ACTUAL" -ne "$EXPECTED_COLS" ]; then
-  echo "SCHEMA ERROR: $FILE" >> logs/ingest_errors.log; exit 1
-fi
-echo "Schema OK: $FILE"
+1. Status-Based Record Extraction
+$ grep -iE ',ERROR,|,PENDING,' ${E0}.csv > flagged_records.csv
+$ echo "Flagged records: $(wc -l < flagged_records.csv)"
 
-══════════════════════════════════════════════════════════════════════════
-UNIX SOLUTIONS
-══════════════════════════════════════════════════════════════════════════
+2. High-Value Record Audit
+$ awk -F',' 'NR>1 && $6~/^[0-9.]+$/ && $6+0>80 {print}' ${E0}.csv > high_score.csv
 
-US-UNX-01 — grep ERROR|PENDING
-$ grep -iE ',ERROR,|,PENDING,' ${e0.toLowerCase()}.csv > flagged_records.csv
+3. Top Records by Region
+$ awk -F',' 'NR>1 {print $5","$6","$0}' ${E0}.csv | sort -t',' -k2 -rn | head -5
 
-US-UNX-02 — awk average score per region
-$ awk -F',' 'NR>1 {sum[$5]+=$6; cnt[$5]++}
-  END {for(r in sum) printf "%-25s Avg: %.2f\\n", r, sum[r]/cnt[r]}' \\
-  ${e0.toLowerCase()}.csv | sort -t: -k2 -rn
+4. Data Quality Check
+$ awk -F',' '{for(i=1;i<=NF;i++) if($i=="") missing++} END{print "Missing fields:", missing+0}' ${E0}.csv
 
-US-UNX-03 — sed normalise nulls
-$ sed -E -i "s/(^|,)(N\\/A|null|--)(,|$)/\\10\\3/g" ${e1.toLowerCase()}.txt
+5. Duplicate Detection
+$ awk -F',' 'NR>1{print $1}' ${E0}.csv | sort | uniq -d | wc -l
 
-US-UNX-14 — prepend source column
-$ for f in ${e0.toLowerCase()}.csv ${e1.toLowerCase()}.csv ${e2.toLowerCase()}.csv ${e3.toLowerCase()}.csv; do
-    name=$(basename $f .csv)
-    tail -n +2 "data/$f" | awk -v src="$name" -F',' '{print src","$0}'
-  done > combined_raw.csv
+6. Record Count Summary
+$ for f in ${E0}.csv ${E1}.json ${E2}.xlsx ${E3}.xml; do echo "$f: $(wc -l < $f)"; done | tee size_report.txt
 
-══════════════════════════════════════════════════════════════════════════
-SHELL SCRIPTING SOLUTIONS
-══════════════════════════════════════════════════════════════════════════
+7. Date Range Filter
+$ awk -F',' 'NR==1 || ($4 >= "'$(date -d '30 days ago' +%Y-%m-%d)'")' ${E0}.csv > recent_records.csv
 
-US-SH-01 — Daily audit report
+Unix Shell Scripts — Solutions
+
+Data Source: ${E0}.csv
+
+1. Daily Audit Report
 #!/bin/bash
 REPORT="reports/audit_report_$(date +%Y%m%d).txt"
 mkdir -p reports
 echo "=== DATA QUALITY AUDIT $(date) ===" > "$REPORT"
-printf "%-40s %8s %8s %8s\\n" "FILE" "TOTAL" "NULLS" "DUPS" >> "$REPORT"
-for FILE in data/${e0.toLowerCase()}.csv data/${e1.toLowerCase()}.csv \\
-            data/${e2.toLowerCase()}.csv data/${e3.toLowerCase()}.csv; do
+printf "%-35s %8s %8s %8s\n" "FILE" "TOTAL" "NULLS" "DUPS" >> "$REPORT"
+for FILE in ${E0}.csv ${E1}.json ${E2}.xlsx ${E3}.xml; do
   [ -f "$FILE" ] || continue
   TOTAL=$(tail -n +2 "$FILE" | wc -l)
-  NULLS=$(awk -F',' '{for(i=1;i<=NF;i++) if($i==""||/null/||/N\\/A/) n++} END{print n+0}' "$FILE")
+  NULLS=$(awk -F',' '{for(i=1;i<=NF;i++) if($i==""||$i=="null"||$i=="N/A") n++} END{print n+0}' "$FILE")
   DUPS=$(tail -n +2 "$FILE" | sort | uniq -d | wc -l)
-  printf "%-40s %8d %8d %8d\\n" "$(basename $FILE)" "$TOTAL" "$NULLS" "$DUPS" >> "$REPORT"
+  printf "%-35s %8d %8d %8d\n" "$(basename $FILE)" "$TOTAL" "$NULLS" "$DUPS" >> "$REPORT"
 done
+echo "Audit saved to $REPORT"
 
-US-SH-09 — Remove empty mandatory fields (data-cleaning 1)
+2. Anomaly Extraction Script
 #!/bin/bash
-INPUT="data/${e0.toLowerCase()}.csv"; OUTPUT="data/${e0.toLowerCase()}_clean.csv"
-REMOVED=0; KEPT=0
+INPUT="${E0}.csv"
+OUTPUT="anomalies.csv"
 head -1 "$INPUT" > "$OUTPUT"
-while IFS=',' read -r id name status rest; do
-  if [[ -n "$id" && "$id" != "null" && -n "$name" ]]; then
-    echo "$id,$name,$status,$rest" >> "$OUTPUT"; ((KEPT++))
-  else ((REMOVED++)); fi
-done < <(tail -n +2 "$INPUT")
-echo "Kept:$KEPT Removed:$REMOVED"
+awk -F',' 'NR>1 {
+  score=$6
+  if (score !~ /^[0-9.]+$/ || score+0 < 0 || score+0 > 100)
+    print $0 ",INVALID_SCORE"
+}' "$INPUT" >> "$OUTPUT"
+echo "Anomalies written to $OUTPUT"
 
-US-SH-10 — Fix delimiter inconsistencies (data-cleaning 2)
+3. Average Score Calculation
 #!/bin/bash
-sed 's/;/,/g; s/\t/,/g' "data/${e2.toLowerCase()}.csv" > "data/${e2.toLowerCase()}_fixed.csv"
+AVG=$(awk -F',' 'NR>1 && $6~/^[0-9.]+$/ {sum+=$6; cnt++} END{printf "%.2f", sum/cnt}' ${E0}.csv)
+echo "Average Score: $AVG"
 
-══════════════════════════════════════════════════════════════════════════
-PYTHON FILE HANDLING SOLUTIONS
-══════════════════════════════════════════════════════════════════════════
+4. Data Cleaning and Standardisation
+#!/bin/bash
+INPUT="${E0}.csv"; OUTPUT="InputFiles/${E0}_cleaned.csv"
+mkdir -p InputFiles
+awk -F',' 'BEGIN{OFS=","} NR==1{print; next} {
+  gsub(/^[ \t]+|[ \t]+$/, "", $2)
+  if ($3 == "") $3 = "Unknown"
+  if ($6 == "" || $6 !~ /^[0-9.]/) $6 = "0"
+  if ($4 ~ /[0-9]{2}-[0-9]{2}-[0-9]{4}/) {
+    split($4, d, "-"); $4 = d[3]"-"d[2]"-"d[1]
+  }
+  print
+}' "$INPUT" > "$OUTPUT"
+echo "Cleaned file saved to $OUTPUT"
 
-US-PY-01 — Clean ${e0} CSV
-import csv, logging
-from pathlib import Path
-logging.basicConfig(level=logging.INFO)
-INPUT = Path('data/${e0.toLowerCase()}.csv')
-OUTPUT = Path('data/${e0.toLowerCase()}_clean.csv')
-seen = set(); kept = 0; removed = 0
-with open(INPUT, encoding='utf-8', errors='replace') as fin, \\
-     open(OUTPUT, 'w', newline='', encoding='utf-8') as fout:
-    reader = csv.DictReader(fin)
-    writer = csv.DictWriter(fout, fieldnames=reader.fieldnames)
-    writer.writeheader()
-    for row in reader:
-        if not row.get('id') or not row.get('name') or not row.get('status'):
-            removed += 1; continue
-        if row['id'] in seen: removed += 1; continue
-        seen.add(row['id']); writer.writerow(row); kept += 1
-logging.info(f"Kept:{kept:,} Removed:{removed:,}")
+MongoDB Solutions
 
-US-PY-02 — Flatten ${e1} JSON
-import json, pandas as pd
-with open('data/${e1.toLowerCase()}.json') as f:
-    records = json.load(f)
-df = pd.json_normalize(records)
-df.fillna('', inplace=True)
-df.to_csv('data/${e1.toLowerCase()}_flat.csv', index=False)
-print(f"Flattened {len(df):,} records")
+Data Source: ${E1}.json
 
-══════════════════════════════════════════════════════════════════════════
-PYSPARK CLEANING SOLUTIONS
-══════════════════════════════════════════════════════════════════════════
-
-US-PS-01 — Null and duplicate detection
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, count, when, isnan, isnull
-spark = SparkSession.builder.appName("${sector}_QA").getOrCreate()
-df = spark.read.csv("data/${e0.toLowerCase()}_clean.csv", header=True, inferSchema=True)
-null_counts = df.select([count(when(isnull(c)|isnan(c), c)).alias(c) for c in df.columns])
-null_counts.show()
-dup_count = df.count() - df.dropDuplicates(['id']).count()
-print(f"Duplicates by id: {dup_count:,}")
-
-══════════════════════════════════════════════════════════════════════════
-MONGODB SOLUTIONS
-══════════════════════════════════════════════════════════════════════════
-
-US-MG-01 — insertMany with index
+1. Update Value for High-Priority Records
 use ${db}
-db.${e0.toLowerCase()}.createIndex({ status:1, region:1 })
-db.${e0.toLowerCase()}.insertMany(data_array, { ordered:false })
+db.${E1}.updateMany(
+  { category: "Premium" },
+  { $set: { value: 25000 } }
+)
 
-US-MG-05 — Aggregation KPI
-db.${e1.toLowerCase()}.aggregate([
-  { $match: { value: { $gt:0 } } },
-  { $group: { _id:"$category", total:{$sum:"$value"}, avg:{$avg:"$value"}, count:{$sum:1} } },
-  { $sort: { total:-1 } }
+2. Add Default Category for Uncategorised Records
+db.${E1}.updateMany(
+  { $or: [{ category: { $exists: false } }, { category: null }, { category: "" }] },
+  { $set: { category: "General" } }
+)
+
+3. Update Missing Timestamps
+db.${E1}.updateMany(
+  { $or: [{ last_updated: { $exists: false } }, { last_updated: null }] },
+  { $set: { last_updated: new Date().toISOString().slice(0, 10) } }
+)
+
+4. Find High-Risk Records
+db.${E1}.find(
+  { value: { $gt: 15000 } },
+  { _id: 0, record_id: 1, category: 1, value: 1 }
+).sort({ value: -1 })
+
+5. Count Records by Category
+db.${E1}.aggregate([
+  { $group: { _id: { $toLower: "$category" }, count: { $sum: 1 } } },
+  { $sort: { count: -1 } }
 ])
 
-US-MG-06 — $lookup join
-db.${e0.toLowerCase()}.aggregate([
-  { $lookup:{ from:"${e1.toLowerCase()}", localField:"id", foreignField:"entity_ref", as:"linked" }},
-  { $project:{ name:1, status:1, region:1, linked_count:{$size:"$linked"} }},
-  { $out:"combined_${e0.toLowerCase()}" }
-])
+6. Export Updated Records
+db.${E1}.find({}).forEach(function(doc) {
+  // Run from mongo shell with --eval or export via mongoexport:
+  // mongoexport --db ${db} --collection ${E1} --type=csv --fields record_id,category,value,last_updated --out InputFiles/${E1}_updated.csv
+})
 
-══════════════════════════════════════════════════════════════════════════
-ADVANCED SQL SOLUTIONS
-══════════════════════════════════════════════════════════════════════════
+Python Solutions
 
-US-ASQL-01 — sp_GetRegionalSummary
+Data Source: ${E2}.xlsx
+
+1. End-to-End Data Cleaning Script
+import pandas as pd
+
+INPUT  = "${E2}.xlsx"
+OUTPUT = "InputFiles/${E2}_cleaned.xlsx"
+
+df = pd.read_excel(INPUT, dtype=str)
+
+# Trim all text fields
+df = df.applymap(lambda x: x.strip() if isinstance(x, str) else x)
+
+# Normalise priority capitalisation
+if 'priority' in df.columns:
+    df['priority'] = df['priority'].str.capitalize()
+
+# Standardise date columns
+for col in df.select_dtypes(include='object').columns:
+    try:
+        df[col] = pd.to_datetime(df[col], dayfirst=True, errors='ignore').dt.strftime('%Y-%m-%d')
+    except Exception:
+        pass
+
+# Fill missing values
+if 'assigned_to'    in df.columns: df['assigned_to']    = df['assigned_to'].fillna('Unassigned')
+if 'completion_pct' in df.columns: df['completion_pct'] = df['completion_pct'].fillna('0')
+
+# Drop rows with fewer than 5 non-null fields
+df = df.dropna(thresh=5)
+
+# Remove exact duplicates
+df = df.drop_duplicates()
+
+df.to_excel(OUTPUT, index=False)
+print(f"Cleaned file saved to {OUTPUT} — {len(df)} records")
+
+PySpark Core Solutions
+
+Data Source: ${E0}.csv
+
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, trim, upper, when
+
+spark = SparkSession.builder.appName("${sector}_Cleaning").getOrCreate()
+
+# 1. Load and remove empty lines
+df = spark.read.option("header", True).csv("${E0}.csv").na.drop("all")
+
+# 2. Trim name and description fields
+df = df.withColumn("name", trim(col("name")))
+if "description" in df.columns:
+    df = df.withColumn("description", trim(col("description")))
+
+# 3. Normalise status to uppercase
+df = df.withColumn("status", upper(trim(col("status"))))
+
+# 4. Drop ExtraColumn if present
+if "ExtraColumn" in df.columns:
+    df = df.drop("ExtraColumn")
+
+# 5. Remove duplicate records
+df = df.dropDuplicates()
+
+# 6. Fill missing score and category
+df = df.fillna({"score": "0", "category": "Unknown"})
+
+df.write.mode("overwrite").option("header", True).csv("InputFiles/${E0}_cleaned")
+print("PySpark cleaning complete.")
+
+PySpark Core, DataFrame and SQL Solutions
+
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, count, avg, sum as spark_sum, desc
+
+spark = SparkSession.builder.appName("${sector}_Analysis").getOrCreate()
+
+# Load all entity files into a unified dataset
+df0 = spark.read.option("header", True).csv("InputFiles/${E0}_cleaned")
+df1 = spark.read.option("header", True).json("${E1}.json")
+df2 = spark.read.option("header", True).option("header", True).csv("${E2}.xlsx")
+df3 = spark.read.option("header", True).xml("${E3}.xml")
+
+# 1. Region-wise record count
+df0.groupBy("region").count().orderBy(desc("count")).show()
+
+# 2. Top categories by average value
+df1.groupBy("category").agg(avg("value").alias("avg_value")) \
+   .orderBy(desc("avg_value")).limit(3).show()
+
+# 3. Status distribution
+df0.groupBy("status").count().orderBy(desc("count")).show()
+
+# 4. Category-wise aggregates
+df1.groupBy("category").agg(
+    spark_sum("value").alias("total_value"),
+    avg("score").alias("avg_score")
+).show()
+
+# 5. Seasonal records filter (Jan–Mar)
+from pyspark.sql.functions import month, to_date
+df_dates = df0.withColumn("created_date", to_date(col("created_date")))
+df_dates.filter(month(col("created_date")).between(1, 3)) \
+        .groupBy("region").count().show()
+
+# 6. Top scoring records
+df0.groupBy("assigned_to").agg(spark_sum("score").alias("total_score")) \
+   .orderBy(desc("total_score")).limit(5).show()
+
+# 7. Active high-scoring records snapshot
+df0.filter((col("is_active") == "true") & (col("score").cast("float") > 75)) \
+   .groupBy("region", "category").count().orderBy(desc("count")).limit(5).show()
+
+Advanced MySQL Solutions
+
+Data Source: ${E0}.csv
+
+1. GetScoreCategory Function
 DELIMITER $$
-CREATE PROCEDURE sp_GetRegionalSummary(IN p_region VARCHAR(50))
-BEGIN
-  SELECT e.region, COUNT(*) total, ROUND(AVG(e.score),2) avg_score,
-         SUM(CASE WHEN e.status='ACTIVE' THEN 1 ELSE 0 END) active_count
-  FROM ${e0.toLowerCase()} e WHERE e.region=p_region GROUP BY e.region;
-END $$
-DELIMITER ;
-
-US-ASQL-02 — fn_CalculateRiskScore
-DELIMITER $$
-CREATE FUNCTION fn_CalculateRiskScore(p_id INT) RETURNS DECIMAL(5,2) DETERMINISTIC
-BEGIN
-  DECLARE v_base FLOAT DEFAULT 0; DECLARE v_cnt INT DEFAULT 0;
-  SELECT COALESCE(score,0) INTO v_base FROM ${e0.toLowerCase()} WHERE id=p_id;
-  SELECT COUNT(*) INTO v_cnt FROM ${e1.toLowerCase()} WHERE entity_ref=p_id;
-  RETURN ROUND(LEAST((v_base*0.5)+(v_cnt*0.3),100),2);
-END $$
-DELIMITER ;
-
-US-ASQL-05 — fn_GetStatusLabel
-DELIMITER $$
-CREATE FUNCTION fn_GetStatusLabel(p_score FLOAT) RETURNS VARCHAR(20) DETERMINISTIC
+CREATE FUNCTION GetScoreCategory(p_score FLOAT) RETURNS VARCHAR(10) DETERMINISTIC
 BEGIN
   RETURN CASE
-    WHEN p_score>=90 THEN 'EXCELLENT'
-    WHEN p_score>=75 THEN 'GOOD'
-    WHEN p_score>=50 THEN 'AVERAGE'
-    WHEN p_score>=25 THEN 'POOR'
-    ELSE 'CRITICAL' END;
+    WHEN p_score > 75 THEN 'High'
+    WHEN p_score >= 40 THEN 'Medium'
+    ELSE 'Low'
+  END;
 END $$
 DELIMITER ;
 
-══════════════════════════════════════════════════════════════════════════
-PYSPARK ANALYSIS SOLUTIONS
-══════════════════════════════════════════════════════════════════════════
+2. GetStatusLabel Function
+DELIMITER $$
+CREATE FUNCTION GetStatusLabel(p_status VARCHAR(20)) RETURNS VARCHAR(30) DETERMINISTIC
+BEGIN
+  RETURN CASE p_status
+    WHEN 'ACTIVE'   THEN 'Active'
+    WHEN 'INACTIVE' THEN 'Inactive'
+    WHEN 'PENDING'  THEN 'Pending Review'
+    WHEN 'ERROR'    THEN 'Error'
+    ELSE 'Unknown'
+  END;
+END $$
+DELIMITER ;
 
-US-RDD-01 — RDD filter + map
-sc = SparkSession.builder.appName("${sector}").getOrCreate().sparkContext
-raw = sc.textFile("data/${e0.toLowerCase()}_clean.csv")
-hdr = raw.first()
-data = raw.filter(lambda x:x!=hdr).map(lambda x:x.split(',')) \\
-          .filter(lambda f:len(f)>=3 and f[0].strip())
-status_dist = data.map(lambda r:(r[2].strip().upper(),1)).reduceByKey(lambda a,b:a+b)
-for s,c in sorted(status_dist.collect(),key=lambda x:-x[1]):
-    print(f"  {s:<20} {c:>8,}")
+3. ListRecordsByScoreCategory Procedure
+DELIMITER $$
+CREATE PROCEDURE ListRecordsByScoreCategory(IN p_category VARCHAR(10))
+BEGIN
+  SELECT id, name, score, GetScoreCategory(score) AS ScoreCategory
+  FROM ${E0}
+  WHERE GetScoreCategory(score) = p_category
+  ORDER BY score DESC;
+END $$
+DELIMITER ;
 
-US-SQL-01 — PySpark SQL JOIN
-spark = SparkSession.builder.appName("${sector}_SQL").getOrCreate()
-e0df = spark.read.csv("data/${e0.toLowerCase()}_clean.csv",header=True,inferSchema=True)
-e1df = spark.read.json("data/${e1.toLowerCase()}_flat.json")
-e0df.createOrReplaceTempView("${e0.toLowerCase()}")
-e1df.createOrReplaceTempView("${e1.toLowerCase()}")
-spark.sql("""
-  SELECT e.region, COUNT(e.id) total, ROUND(AVG(e.score),2) avg_score,
-         ROUND(SUM(r.value),2) total_value
-  FROM ${e0.toLowerCase()} e JOIN ${e1.toLowerCase()} r ON r.entity_ref=e.id
-  GROUP BY e.region ORDER BY total_value DESC""").show()
+CALL ListRecordsByScoreCategory('High');
 
-══════════════════════════════════════════════════════════════════════════
-POWER BI DAX SOLUTIONS
-══════════════════════════════════════════════════════════════════════════
+4. SummaryByRegionAndScore Procedure
+DELIMITER $$
+CREATE PROCEDURE SummaryByRegionAndScore()
+BEGIN
+  SELECT region,
+         GetScoreCategory(score)  AS ScoreCategory,
+         COUNT(*)                 AS TotalRecords,
+         ROUND(AVG(score), 2)     AS AverageScore
+  FROM ${E0}
+  GROUP BY region, GetScoreCategory(score)
+  ORDER BY region, TotalRecords DESC;
+END $$
+DELIMITER ;
 
-Total_Records   = COUNTROWS('${e0.toLowerCase()}')
-Avg_Score       = AVERAGE('${e0.toLowerCase()}'[score])
-MoM_Growth_Pct  = DIVIDE([Total_Records]
-                    - CALCULATE([Total_Records],DATEADD('Calendar'[Date],-1,MONTH)),
-                    CALCULATE([Total_Records],DATEADD('Calendar'[Date],-1,MONTH)),0)
-Rank_By_Region  = RANKX(ALL('${e0.toLowerCase()}'[region]),[Total_Records],,DESC,DENSE)
-YTD_Value       = TOTALYTD(SUM('${e1.toLowerCase()}'[value]),'Calendar'[Date])
-Pct_Share       = DIVIDE([Total_Records],CALCULATE([Total_Records],ALL('${e0.toLowerCase()}')))
-KPI_Status      = SWITCH(TRUE(),[Avg_Score]>=80,"EXCELLENT",[Avg_Score]>=60,"GOOD",
-                    [Avg_Score]>=40,"AVERAGE","NEEDS ATTENTION")
-Rolling_30d_Avg = CALCULATE(AVERAGE('${e0.toLowerCase()}'[score]),
-                    DATESINPERIOD('Calendar'[Date],LASTDATE('Calendar'[Date]),-30,DAY))
-`;
+CALL SummaryByRegionAndScore();
+
+5. RecordsByStatus Procedure
+DELIMITER $$
+CREATE PROCEDURE RecordsByStatus()
+BEGIN
+  SELECT status,
+         COUNT(*)            AS TotalRecords,
+         ROUND(AVG(score),2) AS AverageScore
+  FROM ${E0}
+  GROUP BY status
+  ORDER BY TotalRecords DESC;
+END $$
+DELIMITER ;
+
+CALL RecordsByStatus();
+
+6. RegionStats Procedure
+DELIMITER $$
+CREATE PROCEDURE RegionStats()
+BEGIN
+  DECLARE done    INT DEFAULT 0;
+  DECLARE v_region VARCHAR(50);
+  DECLARE cur CURSOR FOR SELECT DISTINCT region FROM ${E0};
+  DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = 1;
+
+  CREATE TEMPORARY TABLE IF NOT EXISTS tmp_stats (
+    Region VARCHAR(50), RecordCount INT, AvgScore DECIMAL(6,2)
+  );
+
+  OPEN cur;
+  read_loop: LOOP
+    FETCH cur INTO v_region;
+    IF done THEN LEAVE read_loop; END IF;
+    INSERT INTO tmp_stats
+      SELECT region, COUNT(*), ROUND(AVG(score),2)
+      FROM ${E0} WHERE region = v_region GROUP BY region;
+  END LOOP;
+  CLOSE cur;
+
+  SELECT * FROM tmp_stats ORDER BY RecordCount DESC;
+  DROP TEMPORARY TABLE tmp_stats;
+END $$
+DELIMITER ;
+
+CALL RegionStats();
+
+Power BI Solutions
+
+Data Source: ${E0}_powerbi.csv
+
+Power Query Transformations (M Language):
+
+1. Clean Up Text Fields
+= Table.TransformColumns(Source, {
+    {"name",    Text.Trim},
+    {"region",  Text.Trim},
+    {"category",Text.Trim}
+  })
+
+2. Handle Missing Category Values
+= Table.ReplaceValue(#"Trimmed", null, "NA", Replacer.ReplaceValue, {"category"})
+
+3. Remove Duplicate Records
+= Table.Distinct(#"Replaced NA")
+
+4. Standardise Status Values
+= Table.ReplaceValue(#"Distinct", null, "Unknown", Replacer.ReplaceValue, {"status"})
+
+5. Convert Value to Numeric
+= Table.TransformColumnTypes(#"Replaced Status", {{"value", type number}})
+
+6. Fix Non-Numeric Score Entries
+let wordMap = [#"Thirty Four"=34, #"Twenty Seven"=27, #"Sixty"=60, #"Eighty"=80]
+in Table.TransformColumns(#"Numeric Value", {{"score", each
+    if Value.Is(_, type number) then _ else Record.Field(wordMap, _)}})
+
+DAX Measures and Columns:
+
+7. Flag Invalid Records (DAX Column)
+IsInvalidScore = IF([score] < 0 || [score] > 100, TRUE(), FALSE())
+
+8. Average Score Excluding Zero (DAX Measure)
+AverageScoreExcludingZero = CALCULATE(AVERAGE('${E0}'[score]), '${E0}'[score] > 0)
+
+9. Validate Status Entries (DAX Column)
+IsValidStatus = IF([status] IN {"ACTIVE","INACTIVE","PENDING","ERROR"}, TRUE(), FALSE())
+
+Additional DAX Measures:
+Total_Records    = COUNTROWS('${E0}')
+Avg_Score        = AVERAGE('${E0}'[score])
+Total_Value      = SUM('${E0}'[value])
+Active_Count     = CALCULATE(COUNTROWS('${E0}'), '${E0}'[is_active] = "true")
+High_Score_Count = CALCULATE(COUNTROWS('${E0}'), '${E0}'[score] > 75)
+`);
 }
